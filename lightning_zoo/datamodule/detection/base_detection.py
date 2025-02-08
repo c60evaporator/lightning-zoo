@@ -1,6 +1,8 @@
 from typing import TypedDict
 import torch
 from torch.utils.data import DataLoader
+import albumentations as A
+from torchvision.transforms import v2
 import matplotlib.pyplot as plt
 import pandas as pd
 import time
@@ -8,7 +10,7 @@ import os
 from abc import abstractmethod
 
 from ..base import TorchVisionDataModule
-from torch_extend.display.detection import show_bounding_boxes
+from lightning_zoo.display.detection import show_bounding_boxes
 
 ###### Annotation Validation TypeDicts ######
 class ImageValidationResult(TypedDict):
@@ -37,8 +39,11 @@ class BoxValidationResult(TypedDict):
 class DetectionDataModule(TorchVisionDataModule):
     def __init__(self, batch_size, num_workers,
                  dataset_name,
-                 transforms=None, transform=None, target_transform=None):
-        super().__init__(batch_size, num_workers, dataset_name, transforms, transform, target_transform)
+                 train_transforms=None, train_transform=None, train_target_transform=None,
+                 eval_transforms=None, eval_transform=None, eval_target_transform=None):
+        super().__init__(batch_size, num_workers, dataset_name, 
+                         train_transforms, train_transform, train_target_transform,
+                         eval_transforms, eval_transform, eval_target_transform)
         self.class_to_idx = None
         self.idx_to_class = None
 
@@ -77,10 +82,10 @@ class DetectionDataModule(TorchVisionDataModule):
                           collate_fn=self.collate_fn)
     
     ###### Display methods ######
-    def _show_image_and_target(self, img, target, denormalize=True, ax=None, anomaly_indices=None):
+    def _show_image_and_target(self, img, target, image_set='train', denormalize=True, ax=None, anomaly_indices=None):
         """Show the image and the target"""
         if denormalize:  # Denormalize if normalization is included in transforms
-            img = self._denormalize_image(img)
+            img = self._denormalize_image(img, image_set=image_set)
         img = (img*255).to(torch.uint8)  # Change from float[0, 1] to uint[0, 255]
         boxes, labels = target['boxes'], target['labels']
         show_bounding_boxes(img, boxes, labels=labels,
@@ -202,3 +207,19 @@ class DetectionDataModule(TorchVisionDataModule):
         # Output a new annotation file whose anomaly images are excluded
         val_anom_img_ids = df_val_img_result[df_val_img_result['anomaly']]['image_id'].tolist()
         self._output_filtered_annotation(val_anom_img_ids, result_path, 'val')
+
+    @property
+    def default_train_transform(self) -> v2.Compose | A.Compose:
+        return None
+    
+    @property
+    def default_train_target_transform(self) -> v2.Compose | A.Compose:
+        return None
+    
+    @property
+    def default_eval_transform(self) -> v2.Compose | A.Compose:
+        return None
+    
+    @property
+    def default_eval_target_transform(self) -> v2.Compose | A.Compose:
+        return None

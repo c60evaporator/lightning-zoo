@@ -74,7 +74,16 @@ class CocoDataModule(DetectionDataModule):
         
     ###### Transform Methods ######
     @property
-    def default_transforms(self) -> v2.Compose | A.Compose:
+    def default_train_transforms(self) -> v2.Compose | A.Compose:
+        """Default transforms for preprocessing"""
+        return A.Compose([
+            A.Resize(640, 640),  # Resize the image to (640, 640)
+            A.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),  # Normalization (mean and std of the ImageNet dataset for normalizing)
+            ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
+        ], bbox_params=A.BboxParams(format='coco'))
+    
+    @property
+    def default_eval_transforms(self) -> v2.Compose | A.Compose:
         """Default transforms for preprocessing"""
         return A.Compose([
             A.Resize(640, 640),  # Resize the image to (640, 640)

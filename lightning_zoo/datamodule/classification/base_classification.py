@@ -10,10 +10,11 @@ from ..base import TorchVisionDataModule
 class ClassificationDataModule(TorchVisionDataModule):
     def __init__(self, batch_size, num_workers,
                  dataset_name,
-                 transform=None, target_transform=None):
-        super().__init__(batch_size, num_workers, dataset_name, None, transform, target_transform)
-        self.transform = transform if transform is not None else self.default_transform
-        self.target_transform = target_transform if target_transform is not None else self.default_target_transform
+                 train_transform=None, train_target_transform=None,
+                 eval_transform=None, eval_target_transform=None):
+        super().__init__(batch_size, num_workers, dataset_name, 
+                         None, train_transform, train_target_transform,
+                         None, eval_transform, eval_target_transform)
         self.class_to_idx = None
         self.idx_to_class = None
     
@@ -42,13 +43,13 @@ class ClassificationDataModule(TorchVisionDataModule):
                           shuffle=False, num_workers=self.num_workers)
     
     ###### Display methods ######    
-    def _show_image_and_target(self, img, target, denormalize=True, ax=None):
+    def _show_image_and_target(self, img, target, image_set='train', denormalize=True, ax=None):
         # If ax is None, use matplotlib.pyplot.gca()
         if ax is None:
             ax=plt.gca()
         # Denormalize if normalization is included in transforms
         if denormalize:
-            img = self._denormalize_image(img)
+            img = self._denormalize_image(img, image_set=image_set)
         img_permute = img.permute(1, 2, 0)
         ax.imshow(img_permute)  # Display the image
         ax.set_title(f'label: {self.idx_to_class[target.item()] if self.idx_to_class is not None else target.item()}')
@@ -60,17 +61,21 @@ class ClassificationDataModule(TorchVisionDataModule):
 
     ###### Transform Methods ######
     @property
-    @abstractmethod
-    def default_transform(self) -> v2.Compose | A.Compose:
-        """Default transform for preprocessing"""
-        raise NotImplementedError
-    
-    @property
-    def default_target_transform(self):
-        """Default target transform for preprocessing"""
-        None
+    def default_train_transforms(self) -> v2.Compose | A.Compose:
+        """Default transforms for preprocessing"""
+        return None
 
     @property
-    def default_transforms(self):
-        """Default transforms for preprocessing"""
-        None
+    def default_train_target_transform(self) -> v2.Compose | A.Compose:
+        """Default target_transform for training"""
+        return None
+    
+    @property
+    def default_eval_transforms(self) -> v2.Compose | A.Compose:
+        """Default transforms for validation and test"""
+        return None
+
+    @property
+    def default_eval_target_transform(self) -> v2.Compose | A.Compose:
+        """Default target_transform for validation and test"""
+        return None

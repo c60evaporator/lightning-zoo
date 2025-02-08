@@ -7,15 +7,14 @@ class VGGModule(ClassificationModule):
     def __init__(self, class_to_idx,
                  criterion=None,
                  pretrained=True, tuned_layers=None,
-                 opt_name='sgd', lr=0.02, momentum=0.9, weight_decay=1e-4,
-                 lr_scheduler='steplr', lr_step_size=8, lr_gamma=0.1,
-                 epochs=None,
+                 opt_name='sgd', lr=None, momentum=None, weight_decay=None, rmsprop_alpha=None, adam_betas=None, eps=None,
+                 lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
                  model_weight='vgg11', dropout=0.5):
         super().__init__(class_to_idx,
                          'vgg',
                          criterion, pretrained, tuned_layers,
-                         opt_name, lr, momentum, weight_decay, lr_scheduler, lr_step_size, lr_gamma,
-                         epochs)
+                         opt_name, lr, momentum, weight_decay, rmsprop_alpha, adam_betas, eps,
+                         lr_scheduler, lr_step_size, lr_steps, lr_gamma, lr_T_max, lr_patience)
         self.model_weight = model_weight
         self.model: models.VGG
         # Model parameters
@@ -23,7 +22,7 @@ class VGGModule(ClassificationModule):
 
     ###### Set the model and the fine-tuning settings ######
     def _get_model(self):
-        """Load FasterRCNN model based on the `model_name`"""
+        """Load VGG model based on the `model_name`"""
         if self.model_weight == 'vgg11':
             model = models.vgg11(weights=models.VGG11_Weights.IMAGENET1K_V1 if self.pretrained else None)
         elif self.model_weight == 'vgg11_bn':
@@ -43,13 +42,8 @@ class VGGModule(ClassificationModule):
         else:
             raise RuntimeError(f'Invalid `model_weight` {self.model_weight}.')
         return model
-
-    @property
-    def default_tuned_layers(self) -> list[str]:
-        """Layers subject to the fine tuning"""
-        return []
     
-    def replace_transferred_layers(self) -> None:
+    def _replace_transferred_layers(self) -> None:
         """Replace layers for transfer learning"""
         # Replace the classifier
         num_classes = max(self.class_to_idx.values()) + 1

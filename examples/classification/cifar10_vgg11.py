@@ -1,15 +1,15 @@
 #%% Select the device
 import os
 import sys
-# Add the root directory of the repository to system pathes (For debugging)
+# Add the root directory of the repository to system pathes
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 sys.path.append(ROOT)
 
 import torch
 
 # Parameters
-EPOCHS = 1
-BATCH_SIZE = 8
+EPOCHS = 5
+BATCH_SIZE = 64
 NUM_WORKERS = 4
 DATA_ROOT = './datasets/CIFAR10'
 
@@ -31,10 +31,10 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import cv2
 
-from torch_extend.datamodule.classification.cifar import CIFAR10DataModule
+from lightning_zoo.datamodule.classification.cifar import CIFAR10DataModule
 
-# Preprocessing
-transform = A.Compose([
+# Preprocessing (https://www.kaggle.com/code/zlanan/cifar10-high-accuracy-model-build-on-pytorch)
+train_transform = A.Compose([
     A.Resize(32,32),
     A.HorizontalFlip(),
     A.Rotate(limit=5, interpolation=cv2.INTER_NEAREST),
@@ -43,10 +43,15 @@ transform = A.Compose([
     A.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
 ])
+eval_transform = A.Compose([
+    A.Resize(32,32),
+    A.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
+])
 
 # Datamodule
 datamodule = CIFAR10DataModule(batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, root=DATA_ROOT,
-                               transform=transform)
+                               train_transform=train_transform, eval_transform=eval_transform)
 datamodule.setup()
 #datamodule.validate_annotation(use_instance_loader=False)
 
@@ -54,9 +59,9 @@ datamodule.setup()
 datamodule.show_first_minibatch(image_set='train')
 
 # %% Create PyTorch Lightning module
-from torch_extend.lightning.classification.vgg import VGGModule
+from lightning_zoo.lightning.classification.vgg import VGGModule
 
-model = VGGModule(class_to_idx=datamodule.class_to_idx)
+model = VGGModule(class_to_idx=datamodule.class_to_idx, opt_name='adam')
 
 # %% Training
 from lightning import Trainer

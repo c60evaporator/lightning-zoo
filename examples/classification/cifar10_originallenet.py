@@ -1,0 +1,146 @@
+#%% Select the device
+import os
+import sys
+# Add the root directory of the repository to system pathes
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+sys.path.append(ROOT)
+
+import torch
+
+# Parameters
+EPOCHS = 5
+BATCH_SIZE = 100
+NUM_WORKERS = 4
+DATA_ROOT = './datasets/CIFAR10'
+
+# Select the device
+DEVICE = 'cuda'
+if DEVICE == 'cuda':
+    accelerator = 'gpu' if torch.cuda.is_available() else 'cpu'
+elif DEVICE == 'mps':
+    accelerator = 'mps' if torch.backends.mps.is_available() else 'cpu'
+else:
+    accelerator = 'cpu'
+# Set the random seed
+torch.manual_seed(42)
+# Multi GPU (https://github.com/pytorch/pytorch/issues/40403)
+NUM_GPU = 1
+
+# %% Define DataModule
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+import cv2
+
+from lightning_zoo.datamodule.classification.cifar import CIFAR10DataModule
+
+# Preprocessing (https://www.kaggle.com/code/zlanan/cifar10-high-accuracy-model-build-on-pytorch)
+train_transform = A.Compose([
+    A.Resize(32,32),
+    A.HorizontalFlip(),
+    A.Rotate(limit=5, interpolation=cv2.INTER_NEAREST),
+    A.Affine(rotate=0, shear=10, scale=(0.9,1.1)),
+    A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+    A.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
+])
+eval_transform = A.Compose([
+    A.Resize(32,32),
+    A.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
+])
+
+# Datamodule
+datamodule = CIFAR10DataModule(batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, root=DATA_ROOT,
+                               train_transform=train_transform, eval_transform=eval_transform)
+datamodule.setup()
+#datamodule.validate_annotation(use_instance_loader=False)
+
+# Display the first minibatch
+datamodule.show_first_minibatch(image_set='train')
+
+# %% Create original PyTorch model
+from torch import nn
+
+class LeNet(nn.Module):
+    """LeNet model for CIFAR-10 (https://www.kaggle.com/code/vikasbhadoria/cifar10-high-accuracy-model-build-on-pytorch)"""
+    def __init__(self, dropout=0.5):
+        super().__init__()
+        self.fetrures = nn.Sequential(
+            nn.Conv2d(3, 16, 3, 1, padding=1),
+            nn.ReLU(inplace=False),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(16, 32, 3, 1, padding=1),
+            nn.ReLU(inplace=False),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(32, 64, 3, 1, padding=1),
+            nn.ReLU(inplace=False),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+        )
+        self.classifier = nn.Sequential(
+            nn.Linear(4*4*64, 500),
+            nn.ReLU(inplace=False),
+            nn.Dropout(dropout),
+            nn.Linear(500, 10)
+        )
+    def forward(self, x):
+      x = self.fetrures(x)
+      x = x.view(-1, 4*4*64)
+      x = self.classifier(x)
+      return x
+
+# %% Create original PyTorch Lightning module
+# Original Lightning Module
+from lightning_zoo.lightning.classification.base_classification import ClassificationModule
+
+class LeNetModule(ClassificationModule):
+    def __init__(self, class_to_idx,
+                 criterion=None,
+                 opt_name='sgd', lr=None, momentum=None, weight_decay=None, rmsprop_alpha=0.99, adam_betas=(0.9, 0.999), eps=1e-8,
+                 lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=0.1, lr_T_max=None, lr_patience=10,
+                 dropout=0.5):
+        super().__init__(class_to_idx,
+                         model_name='lenet',
+                         criterion=criterion, pretrained=False, tuned_layers=None,
+                         opt_name=opt_name, lr=lr, momentum=momentum, weight_decay=weight_decay,
+                         rmsprop_alpha=rmsprop_alpha, adam_betas=adam_betas, eps=eps,
+                         lr_scheduler=lr_scheduler, lr_step_size=lr_step_size, lr_steps=lr_steps,
+                         lr_gamma=lr_gamma, lr_T_max=lr_T_max, lr_patience=lr_patience)
+        self.model: LeNet
+        # Model parameters
+        self.dropout = dropout
+
+    ###### Set the model and the fine-tuning settings ######
+    def _get_model(self):
+        return LeNet(dropout=self.dropout)
+
+    @property
+    def _default_tuned_layers(self) -> list[str]:
+        """Layers subject to the fine tuning"""
+        return []
+    
+    def _replace_transferred_layers(self) -> None:
+        """Replace layers for transfer learning"""
+        pass
+
+model = LeNetModule(class_to_idx=datamodule.class_to_idx, 
+                    opt_name='adam', lr=0.001)
+
+# %% Training
+from lightning import Trainer
+from lightning.pytorch.loggers import CSVLogger
+import matplotlib.pyplot as plt
+
+# CSV logger
+logger = CSVLogger(save_dir=f'./log/{datamodule.dataset_name}/{model.model_name}',
+                   name='LeNet', version=0)
+trainer = Trainer(accelerator, devices=NUM_GPU, max_epochs=EPOCHS, logger=logger)
+trainer.fit(model, datamodule=datamodule)
+
+# Show the training results
+model.plot_train_history()
+plt.show()
+
+# %% Test
+trainer.test(model, datamodule=datamodule)
+
+# %%

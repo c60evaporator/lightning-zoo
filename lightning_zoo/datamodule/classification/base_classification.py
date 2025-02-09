@@ -1,10 +1,22 @@
-from torch.utils.data import DataLoader
+from typing import TypedDict
 import albumentations as A
 from torchvision.transforms import v2
+from torchvision.utils import save_image
 import matplotlib.pyplot as plt
-from abc import abstractmethod
+import pandas as pd
+import os
 
 from ..base import TorchVisionDataModule
+
+###### Annotation Validation TypeDicts for Classification ######
+class ClsImageValidationResult(TypedDict):
+    img_id: int
+    img_width: int
+    img_height: int
+    label: int
+    label_name: str
+    anomaly: bool
+    anomaly_label_idx: bool
 
 ###### Main Class ######
 class ClassificationDataModule(TorchVisionDataModule):
@@ -19,31 +31,26 @@ class ClassificationDataModule(TorchVisionDataModule):
         self.idx_to_class = None
     
     ###### Dataset Methods ######
-    @abstractmethod
-    def _get_datasets(self, ignore_transforms):
-        """Dataset initialization"""
-        raise NotImplementedError
-    
     def _setup(self):
         self.train_dataset, self.val_dataset, self.test_dataset = self._get_datasets()
-    
-    def train_dataloader(self) -> list[str]:
-        """Create dataloader"""
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, 
-                          shuffle=True, num_workers=self.num_workers)
-    
-    def val_dataloader(self) -> list[str]:
-        """Create dataloader"""
-        return DataLoader(self.val_dataset, batch_size=self.batch_size, 
-                          shuffle=False, num_workers=self.num_workers)
-    
-    def test_dataloader(self) -> list[str]:
-        """Create dataloader"""
-        return DataLoader(self.test_dataset, batch_size=self.batch_size, 
-                          shuffle=False, num_workers=self.num_workers)
+        # Class to index dict
+        if 'class_to_idx' in vars(self.train_dataset):
+            self.class_to_idx = self.train_dataset.class_to_idx
+        else:
+            raise ValueError('`class_to_idx` is not defined in the train_dataset. Please define `class_to_idx` as a member variable in the dataset class.')
+        # Index to class dict
+        if 'idx_to_class' in vars(self.train_dataset):
+            self.idx_to_class = self.train_dataset.idx_to_class
+        else:
+            self.idx_to_class = {v: k for k, v in self.class_to_idx.items()}
+            na_cnt = 0
+            for i in range(max(self.class_to_idx.values())):
+                if i not in self.class_to_idx.values():
+                    na_cnt += 1
+                    self.idx_to_class[i] = f'NA{"{:02}".format(na_cnt)}'
     
     ###### Display methods ######    
-    def _show_image_and_target(self, img, target, image_set='train', denormalize=True, ax=None):
+    def _show_image_and_target(self, img, target, image_set='train', denormalize=True, ax=None, anomaly_indices=None):
         # If ax is None, use matplotlib.pyplot.gca()
         if ax is None:
             ax=plt.gca()
@@ -52,12 +59,67 @@ class ClassificationDataModule(TorchVisionDataModule):
             img = self._denormalize_image(img, image_set=image_set)
         img_permute = img.permute(1, 2, 0)
         ax.imshow(img_permute)  # Display the image
-        ax.set_title(f'label: {self.idx_to_class[target.item()] if self.idx_to_class is not None else target.item()}')
+        class_ok = self.idx_to_class is not None and target.item() in self.idx_to_class.keys()
+        ax.set_title(f'label: {self.idx_to_class[target.item()] if class_ok else target.item()}')
 
     ###### Validation methods ######
-    def validate_annotation(self, result_path='./ann_validation', use_instance_loader=False):
-        """Validate the annotations"""
-        pass
+    def _output_filtered_annotation(self, df_img_results, result_dir, image_set):
+        """
+        Output an annotation file whose anomaly images are excluded.
+
+        In the case of classification task, the normal images are saved aligned with `torchvision.datasets.ImageFolder` format. Please use `torchvision.datasets.ImageFolder` to load the normal images.
+        """
+        print('Exporting the filtered dataset...')
+        df_norm_img_results: pd.DataFrame = df_img_results[~df_img_results['anomaly']]
+        labels = list(self.idx_to_class.values())
+        # Create image_set folder
+        os.makedirs(f'{result_dir}/filtered_dataset', exist_ok=True)
+        os.makedirs(f'{result_dir}/filtered_dataset/{image_set}', exist_ok=True)
+        # Create label folder
+        for label in labels:
+            os.makedirs(f'{result_dir}/filtered_dataset/{image_set}/{label}', exist_ok=True)
+        # Save the normal images
+        for i, row in df_norm_img_results.iterrows():
+            # Get the image and target from the dataset
+            if image_set == 'train':
+                img, target = self.train_dataset[row['img_id']]
+            elif image_set == 'val':
+                img, target = self.val_dataset[row['img_id']]
+            elif image_set == 'test':
+                img, target = self.test_dataset[row['img_id']]
+            # Dataset iteration validation
+            if target != row['label']:
+                raise Exception('Dataset iteration is not aligned with the dataframe.')
+            # Save the image
+            save_image(img, f'{result_dir}/filtered_dataset/{image_set}/{self.idx_to_class[target]}/{row["img_id"]}.png')
+
+    def _validate_annotation(self, imgs, targets, i_baches, batch_size, anomaly_save_path, denormalize):
+        """Validate the annotation"""
+        img_validations: list[ClsImageValidationResult] = []
+        for i, (img, target) in enumerate(zip(imgs, targets)):
+            # Image information
+            img_result: ClsImageValidationResult = {}
+            img_result['img_id'] = i_baches*batch_size + i
+            img_result['img_width'] = img.size()[-1]
+            img_result['img_height'] = img.size()[-2]
+            img_result['label'] = target.item()
+            img_result['anomaly'] = False
+            # Label index validation
+            if target.item() not in self.idx_to_class.keys():
+                img_result['label_name'] = self.idx_to_class[target.item()]
+                img_result['anomaly_label_idx'] = True
+                img_result['anomaly'] = True
+            else:
+                img_result['label_name'] = ''
+                img_result['anomaly_label_idx'] = False
+            # Save the anomaly image
+            if img_result['anomaly']:
+                fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+                self._show_image_and_target(img, target, denormalize=denormalize, ax=ax)
+                fig.savefig(f'{anomaly_save_path}/{img_result["img_id"]}.png')
+                plt.show()
+            img_validations.append(img_result)
+        return img_validations, []
 
     ###### Transform Methods ######
     @property

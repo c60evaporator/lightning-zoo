@@ -11,7 +11,7 @@ import torch
 EPOCHS = 1
 BATCH_SIZE = 8
 NUM_WORKERS = 4
-DATA_ROOT = 'object_detection/datasets/COCO'
+DATA_ROOT = './datasets/COCO'
 
 # Select the device
 DEVICE = 'cuda'
@@ -30,7 +30,7 @@ NUM_GPU = 1
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-from torch_extend.datamodule.detection.coco import CocoDataModule
+from lightning_zoo.datamodule.detection.coco import CocoDataModule
 
 # Preprocessing
 transforms = A.Compose([
@@ -41,17 +41,20 @@ transforms = A.Compose([
 
 # Datamodule
 datamodule = CocoDataModule(batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, root=DATA_ROOT,
-                            train_annFile='./ann_validation/COCO/instances_train_filtered.json',
-                            val_annFile='./ann_validation/COCO/instances_val_filtered.json',
-                            transforms=transforms)
+                            train_annFile='./ann_validation/COCO/filtered_ann/instances_train_filtered.json',
+                            val_annFile='./ann_validation/COCO/filtered_ann/instances_val_filtered.json',
+                            dataset_name='COCO',
+                            train_transforms=transforms, eval_transforms=transforms)
 datamodule.setup()
-#datamodule.validate_annotation(use_instance_loader=False)
+
+# Validate the dataset
+datamodule.validate_dataset(output_normal_annotation=True, ignore_transforms=False)
 
 # Display the first minibatch
 datamodule.show_first_minibatch(image_set='train')
 
 # %% Create PyTorch Lightning module
-from torch_extend.lightning.detection.faster_rcnn import FasterRCNNModule
+from lightning_zoo.lightning.detection.faster_rcnn import FasterRCNNModule
 
 model = FasterRCNNModule(class_to_idx=datamodule.class_to_idx)
 

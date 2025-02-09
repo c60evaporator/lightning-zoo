@@ -61,10 +61,10 @@ class DetectionModule(TorchVisionModule):
         return [{k: v.cpu() for k, v in pred.items()} 
                 for pred in self.model(batch[0])]
     
-    def _calc_epoch_metrics(self, targets, preds):
+    def _calc_epoch_metrics(self, preds, targets):
         """Calculate the metrics from the targets and predictions"""
         # Calculate the mean Average Precision
-        aps = average_precisions(targets, preds,
+        aps = average_precisions(preds, targets,
                                  self.idx_to_class, 
                                  iou_threshold=self.ap_iou_threshold, conf_threshold=self.ap_conf_threshold)
         mean_average_precision = np.mean([v['average_precision'] for v in aps.values()])

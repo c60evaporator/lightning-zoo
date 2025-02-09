@@ -20,6 +20,8 @@ class FasterRCNNModule(DetectionModule):
                          ap_iou_threshold, ap_conf_threshold)
         self.model_weight = model_weight
         self.model: faster_rcnn.FasterRCNN
+        # Save hyperparameters
+        self.save_hyperparameters()
 
     ###### Set the model and the fine-tuning settings ######
     def _get_model(self):
@@ -37,11 +39,11 @@ class FasterRCNNModule(DetectionModule):
         return model
 
     @property
-    def default_tuned_layers(self) -> list[str]:
+    def _default_tuned_layers(self) -> list[str]:
         """Layers subject to the fine tuning"""
         return []
     
-    def replace_transferred_layers(self) -> None:
+    def _replace_transferred_layers(self) -> None:
         """Replace layers for transfer learning"""
         # Replace the box_predictor
         num_classes = max(self.class_to_idx.values()) + 1

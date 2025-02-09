@@ -19,6 +19,8 @@ class VGGModule(ClassificationModule):
         self.model: models.VGG
         # Model parameters
         self.dropout = dropout
+        # Save hyperparameters
+        self.save_hyperparameters()
 
     ###### Set the model and the fine-tuning settings ######
     def _get_model(self):

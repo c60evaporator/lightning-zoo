@@ -1,4 +1,5 @@
-#%% Select the device
+#%% Select the device and hyperparameters
+###### 1. Select the device and hyperparameters ######
 import os
 import sys
 # Add the root directory of the repository to system pathes
@@ -7,11 +8,17 @@ sys.path.append(ROOT)
 
 import torch
 
-# Parameters
-EPOCHS = 5
-BATCH_SIZE = 64
+# General Parameters
+EPOCHS = 20
+BATCH_SIZE = 128
 NUM_WORKERS = 4
 DATA_ROOT = './datasets/CIFAR10'
+PRETRAINED = True
+# Optimizer Parameters
+OPT_NAME = 'sgd'
+LR = 0.01
+MOMENTUM = 0.9
+WEIGHT_DECAY = 5e-4
 
 # Select the device
 DEVICE = 'cuda'
@@ -27,6 +34,7 @@ torch.manual_seed(42)
 NUM_GPU = 1
 
 # %% Define DataModule
+###### 2. Define the dataset (DataModule) ######
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import cv2
@@ -53,24 +61,36 @@ eval_transform = A.Compose([
 datamodule = CIFAR10DataModule(batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, root=DATA_ROOT,
                                train_transform=train_transform, eval_transform=eval_transform)
 datamodule.setup()
-#datamodule.validate_annotation(use_instance_loader=False)
+# Validate the dataset
+#datamodule.validate_dataset(output_normal_annotation=True)
 
 # Display the first minibatch
 datamodule.show_first_minibatch(image_set='train')
 
 # %% Create PyTorch Lightning module
+###### 3. Define the model (LightningModule) ######
 from lightning_zoo.lightning.classification.vgg import VGGModule
 
-model = VGGModule(class_to_idx=datamodule.class_to_idx, opt_name='adam')
+model = VGGModule(class_to_idx=datamodule.class_to_idx, opt_name='sgd', pretrained=PRETRAINED)
 
 # %% Training
+###### 4. Training (Trainer) ######
 from lightning import Trainer
 from lightning.pytorch.loggers import CSVLogger
+import matplotlib.pyplot as plt
 
 # CSV logger
 logger = CSVLogger(save_dir=f'./log/{datamodule.dataset_name}/{model.model_name}',
-                   name=model.model_weight, version=0)
-trainer = Trainer(accelerator, devices=NUM_GPU, max_epochs=EPOCHS, logger=logger)
+                   name=model.model_weight)
+trainer = Trainer(accelerator, devices=NUM_GPU, max_epochs=EPOCHS,
+                  logger=logger, profiler="simple")
 trainer.fit(model, datamodule=datamodule)
+
+# Show the training results
+model.plot_train_history()
+plt.show()
+
+# %% Test
+trainer.test(model, datamodule=datamodule)
         
 # %%

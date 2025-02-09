@@ -1,4 +1,5 @@
-#%% Select the device
+#%% Select the device and hyperparameters
+###### 1. Select the device and hyperparameters ######
 import os
 import sys
 # Add the root directory of the repository to system pathes
@@ -7,11 +8,16 @@ sys.path.append(ROOT)
 
 import torch
 
-# Parameters
+# General Parameters
 EPOCHS = 5
 BATCH_SIZE = 100
 NUM_WORKERS = 4
 DATA_ROOT = './datasets/CIFAR10'
+# Optimizer Parameters
+OPT_NAME = 'sgd'
+LR = 0.01
+MOMENTUM = 0.9
+WEIGHT_DECAY = 5e-4
 
 # Select the device
 DEVICE = 'cuda'
@@ -26,7 +32,8 @@ torch.manual_seed(42)
 # Multi GPU (https://github.com/pytorch/pytorch/issues/40403)
 NUM_GPU = 1
 
-# %% Define DataModule
+# %% Define the dataset
+###### 2. Define the dataset (DataModule) ######
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import cv2
@@ -53,12 +60,13 @@ eval_transform = A.Compose([
 datamodule = CIFAR10DataModule(batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, root=DATA_ROOT,
                                train_transform=train_transform, eval_transform=eval_transform)
 datamodule.setup()
-#datamodule.validate_annotation(use_instance_loader=False)
+#datamodule.validate_dataset(output_normal_annotation=True)
 
 # Display the first minibatch
 datamodule.show_first_minibatch(image_set='train')
 
 # %% Create original PyTorch model
+###### 3. Define the model (LightningModule) ######
 from torch import nn
 
 class LeNet(nn.Module):
@@ -126,6 +134,7 @@ model = LeNetModule(class_to_idx=datamodule.class_to_idx,
                     opt_name='adam', lr=0.001)
 
 # %% Training
+###### 4. Training (Trainer) ######
 from lightning import Trainer
 from lightning.pytorch.loggers import CSVLogger
 import matplotlib.pyplot as plt

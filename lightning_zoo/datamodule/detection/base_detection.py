@@ -4,26 +4,22 @@ from torch.utils.data import DataLoader
 import albumentations as A
 from torchvision.transforms import v2
 import matplotlib.pyplot as plt
-import pandas as pd
-import time
 import os
 from abc import abstractmethod
 
 from ..base import TorchVisionDataModule
 from lightning_zoo.display.detection import show_bounding_boxes
 
-###### Annotation Validation TypeDicts ######
-class ImageValidationResult(TypedDict):
+###### Annotation Validation TypeDicts for Object Detection ######
+class DetImageValidationResult(TypedDict):
     img_id: int
     img_path: str
     img_width: int
     img_height: int
     n_boxes: int
     anomaly: bool
-    anomaly_box_width: bool
-    anomaly_box_height: bool
 
-class BoxValidationResult(TypedDict):
+class DetBoxValidationResult(TypedDict):
     img_id: int
     img_path: str
     label: int
@@ -34,6 +30,7 @@ class BoxValidationResult(TypedDict):
     anomaly: bool
     anomaly_box_width: bool
     anomaly_box_height: bool
+    anomaly_label_idx: bool
 
 ###### Main Class ######
 class DetectionDataModule(TorchVisionDataModule):
@@ -46,40 +43,28 @@ class DetectionDataModule(TorchVisionDataModule):
                          eval_transforms, eval_transform, eval_target_transform)
         self.class_to_idx = None
         self.idx_to_class = None
-
+    
+    ###### Dataset Methods ######
     def collate_fn(self, batch):
         return tuple(zip(*batch))
     
-    ###### Dataset Methods ######
-    @abstractmethod
-    def _get_datasets(self, ignore_transforms):
-        """Dataset initialization"""
-        raise NotImplementedError
-    
     def _setup(self):
         self.train_dataset, self.val_dataset, self.test_dataset = self._get_datasets()
+        # Class to index dict
         if 'class_to_idx' in vars(self.train_dataset):
             self.class_to_idx = self.train_dataset.class_to_idx
+        else:
+            raise ValueError('`class_to_idx` is not defined in the train_dataset. Please define `class_to_idx` as a member variable in the dataset class.')
+        # Index to class dict
         if 'idx_to_class' in vars(self.train_dataset):
             self.idx_to_class = self.train_dataset.idx_to_class
-    
-    def train_dataloader(self) -> list[str]:
-        """Create dataloader"""
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, 
-                          shuffle=True, num_workers=self.num_workers,
-                          collate_fn=self.collate_fn)
-    
-    def val_dataloader(self) -> list[str]:
-        """Create dataloader"""
-        return DataLoader(self.val_dataset, batch_size=self.batch_size, 
-                          shuffle=False, num_workers=self.num_workers,
-                          collate_fn=self.collate_fn)
-    
-    def test_dataloader(self) -> list[str]:
-        """Create dataloader"""
-        return DataLoader(self.test_dataset, batch_size=self.batch_size, 
-                          shuffle=False, num_workers=self.num_workers,
-                          collate_fn=self.collate_fn)
+        else:
+            self.idx_to_class = {v: k for k, v in self.class_to_idx.items()}
+            na_cnt = 0
+            for i in range(max(self.class_to_idx.values())):
+                if i not in self.class_to_idx.values():
+                    na_cnt += 1
+                    self.idx_to_class[i] = f'NA{"{:02}".format(na_cnt)}'
     
     ###### Display methods ######
     def _show_image_and_target(self, img, target, image_set='train', denormalize=True, ax=None, anomaly_indices=None):
@@ -89,22 +74,22 @@ class DetectionDataModule(TorchVisionDataModule):
         img = (img*255).to(torch.uint8)  # Change from float[0, 1] to uint[0, 255]
         boxes, labels = target['boxes'], target['labels']
         show_bounding_boxes(img, boxes, labels=labels,
-                            idx_to_class=self.idx_to_class, 
+                            idx_to_class=self.idx_to_class,
                             anomaly_indices=anomaly_indices, ax=ax)
 
     ###### Validation methods ######
     @abstractmethod
-    def _output_filtered_annotation(self, del_img_ids, output_dir, image_set):
+    def _output_filtered_annotation(self, df_img_results, result_dir, image_set):
         """Output an annotation file whose anomaly images are excluded"""
         raise NotImplementedError
 
-    def _validate_annotation(self, imgs, targets, anomaly_save_path, use_instance_loader):
-        """Validate the annotations"""
-        img_validations = []
-        box_validations = []
+    def _validate_annotation(self, imgs, targets, i_baches, batch_size, anomaly_save_path, denormalize):
+        """Validate the annotation"""
+        img_validations: list[DetImageValidationResult] = []
+        box_validations: list[DetBoxValidationResult]  = []
         for img, target in zip(imgs, targets):
             # Image information
-            img_result: ImageValidationResult = {}
+            img_result: DetImageValidationResult = {}
             image_id = int(os.path.splitext(os.path.basename(target['image_path']))[0])
             img_result['image_id'] = image_id
             img_result['image_path'] = target['image_path']
@@ -113,10 +98,10 @@ class DetectionDataModule(TorchVisionDataModule):
             img_result['n_boxes'] = len(target['boxes'])
             img_result['anomaly'] = False
             anomaly_indices = []
-            # Bounding box validation
+            # Bounding box (target) validation
             for i_box, (box, label) in enumerate(zip(target['boxes'], target['labels'])):
                 box_list = box.tolist()
-                box_result: BoxValidationResult = {}
+                box_result: DetBoxValidationResult = {}
                 box_result['image_id'] = image_id
                 box_result['image_path'] = target['image_path']
                 box_result['label'] = label.item()
@@ -128,8 +113,10 @@ class DetectionDataModule(TorchVisionDataModule):
                 box_result['anomaly_box_width'] = box_result['box_width'] <= 0
                 # Negative box width
                 box_result['anomaly_box_height'] = box_result['box_height'] <= 0
+                # Label index validation
+                box_result['anomaly_label_idx'] = box_result['label'] not in self.idx_to_class.keys()
                 # Final anomaly judgement
-                box_result['anomaly'] = box_result['anomaly_box_width'] or box_result['anomaly_box_height']
+                box_result['anomaly'] = box_result['anomaly_box_width'] or box_result['anomaly_box_height'] or box_result['anomaly_label_idx']
                 if box_result['anomaly']:
                     img_result['anomaly'] = True
                     anomaly_indices.append(i_box)
@@ -137,76 +124,11 @@ class DetectionDataModule(TorchVisionDataModule):
             # Save the anomaly image
             if img_result['anomaly']:
                 fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-                self._show_image_and_target(img, target, denormalize=use_instance_loader, ax=ax, anomaly_indices=anomaly_indices)
+                self._show_image_and_target(img, target, denormalize=denormalize, ax=ax, anomaly_indices=anomaly_indices)
                 fig.savefig(f'{anomaly_save_path}/{os.path.basename(target["image_path"])}')
+                plt.show()
             img_validations.append(img_result)
         return img_validations, box_validations
-    
-    def validate_annotation(self, result_path=None, use_instance_loader=False):
-        """Validate the annotations"""
-        if self.train_dataset is None or self.val_dataset is None:
-            raise RuntimeError('Run the `setup()` method before the validation')
-        if result_path == None:
-            result_path = f'./ann_validation/{self.dataset_name}'
-        # Get the datasets for the annotation validation
-        if use_instance_loader:
-            trainloader = self.train_dataloader()
-            valloader = self.val_dataloader()
-        else:
-            trainset, valset, _ = self._get_datasets(ignore_transforms=True)
-            trainloader = DataLoader(trainset, batch_size=1, 
-                                    shuffle=False, num_workers=self.num_workers,
-                                    collate_fn=self.collate_fn)
-            valloader = DataLoader(valset, batch_size=1, 
-                                shuffle=False, num_workers=self.num_workers,
-                                collate_fn=self.collate_fn)
-        os.makedirs(result_path, exist_ok=True)
-        train_anomaly_path = f'{result_path}/anomaly_images/train'
-        os.makedirs(train_anomaly_path, exist_ok=True)
-        val_anomaly_path = f'{result_path}/anomaly_images/val'
-        os.makedirs(val_anomaly_path, exist_ok=True)
-
-        # Validate the annotation of train_dataset
-        print('Validate the annotations of train_dataset')
-        start = time.time()
-        train_img_result: list[ImageValidationResult] = []
-        train_box_result: list[BoxValidationResult] = []
-        for i, (imgs, targets) in enumerate(trainloader):
-            img_validations, box_validations = self._validate_annotation(imgs, targets, train_anomaly_path, use_instance_loader)
-            train_img_result.extend(img_validations)
-            train_box_result.extend(box_validations)
-            if i%100 == 0:  # Show progress every 100 times
-                print(f'Validating the annotations of train_dataset: {i}/{len(trainloader)}, elapsed_time: {time.time() - start}')
-        # Output the validation result
-        df_train_img_result = pd.DataFrame(train_img_result)
-        df_train_img_result.to_csv(f'{result_path}/train_img_validation.csv')
-        df_train_box_result = pd.DataFrame(train_box_result)
-        df_train_box_result.to_csv(f'{result_path}/train_box_validation.csv')
-        plt.show()
-        # Output a new annotation file whose anomaly images are excluded
-        train_anom_img_ids = df_train_img_result[df_train_img_result['anomaly']]['image_id'].tolist()
-        self._output_filtered_annotation(train_anom_img_ids, result_path, 'train')
-            
-        # Validate the annotation of val_dataset
-        print('Validate the annotations of val_dataset')
-        start = time.time()
-        val_img_result: list[ImageValidationResult] = []
-        val_box_result: list[BoxValidationResult] = []
-        for i, (imgs, targets) in enumerate(valloader):
-            img_validations, box_validations = self._validate_annotation(imgs, targets, val_anomaly_path, use_instance_loader)
-            val_img_result.extend(img_validations)
-            val_box_result.extend(box_validations)
-            if i%100 == 0:  # Show progress every 100 times
-                print(f'Validating the annotations of val_dataset: {i}/{len(valloader)}, elapsed_time: {time.time() - start}')
-        # Output the validation result
-        df_val_img_result = pd.DataFrame(val_img_result)
-        df_val_img_result.to_csv(f'{result_path}/val_img_validation.csv')
-        df_val_box_result = pd.DataFrame(val_box_result)
-        df_val_box_result.to_csv(f'{result_path}/val_box_validation.csv')
-        plt.show()
-        # Output a new annotation file whose anomaly images are excluded
-        val_anom_img_ids = df_val_img_result[df_val_img_result['anomaly']]['image_id'].tolist()
-        self._output_filtered_annotation(val_anom_img_ids, result_path, 'val')
 
     @property
     def default_train_transform(self) -> v2.Compose | A.Compose:

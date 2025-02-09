@@ -2,7 +2,6 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from torchvision.transforms import v2
 import json
-import os
 
 from .base_detection import DetectionDataModule
 from ...dataset.detection.coco import CocoDetectionTV
@@ -36,27 +35,25 @@ class CocoDataModule(DetectionDataModule):
         train_dataset = CocoDetectionTV(
             f'{self.root}/{self.train_dir}',
             annFile=self.train_annFile,
-            transforms=self._get_transforms('train', ignore_transforms),
-            transform=self._get_transform('train', ignore_transforms),
+            transforms=self.train_transforms if not ignore_transforms else None,
+            transform=v2.ToTensor() if ignore_transforms else None
         )
         val_dataset = CocoDetectionTV(
             f'{self.root}/{self.val_dir}',
             annFile=self.val_annFile, 
-            transforms=self._get_transforms('val', ignore_transforms),
-            transform=self._get_transform('val', ignore_transforms),
+            transforms=self.eval_transforms if not ignore_transforms else None,
+            transform=v2.ToTensor() if ignore_transforms else None
         )
         test_dataset = CocoDetectionTV(
             f'{self.root}/{self.val_dir}',
             annFile=self.val_annFile, 
-            transforms=self._get_transforms('test', ignore_transforms),
-            transform=self._get_transform('test', ignore_transforms),
+            transforms=self.eval_transforms if not ignore_transforms else None,
+            transform=v2.ToTensor() if ignore_transforms else None
         )
         return train_dataset, val_dataset, test_dataset
     
     ###### Validation Methods ######
-    def _output_filtered_annotation(self, df_img_results, result_dir, image_set):
-        print('Exporting the filtered annotaion file...')
-        del_img_ids = df_img_results[df_img_results['anomaly']]['image_id'].tolist()
+    def _output_filtered_annotation(self, del_img_ids, output_dir, image_set='train'):
         if image_set=='train':
             coco_dataset = self.train_dataset.coco.dataset
         elif image_set == 'val':
@@ -81,8 +78,7 @@ class CocoDataModule(DetectionDataModule):
             'annotations': filtered_annotations,
             'categories': coco_categories
         }
-        os.makedirs(f'{result_dir}/filtered_ann', exist_ok=True)
-        with open(f'{result_dir}/filtered_ann/instances_{image_set}_filtered.json', 'w') as f:
+        with open(f'{output_dir}/instances_{image_set}_filtered.json', 'w') as f:
             json.dump(filtered_coco, f, indent=None)
         
     ###### Transform Methods ######

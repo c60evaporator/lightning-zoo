@@ -27,15 +27,13 @@ class ClassificationModule(TorchVisionModule):
 
     ###### Set the model and the fine-tuning settings ######
     @property
-    @abstractmethod
     def _default_tuned_layers(self) -> list[str]:
         """Layers subject to the fine tuning"""
-        raise NotImplementedError
+        return []
     
-    @abstractmethod
     def _replace_transferred_layers(self) -> None:
         """Replace layers for transfer learning"""
-        raise NotImplementedError
+        pass
     
     def _setup(self):
         """Additional processes during the setup (E.g., List for storing predictions in validation)"""
@@ -67,7 +65,7 @@ class ClassificationModule(TorchVisionModule):
         """Get the predictions and store them to CPU as a list"""
         return [pred.cpu() for pred in self.model(batch[0])]
 
-    def _calc_epoch_metrics(self, targets, preds):
+    def _calc_epoch_metrics(self, preds, targets):
         """Calculate the metrics from the targets and predictions"""
         # Calculate the accuracy
         predicted_labels = [torch.argmax(pred).item() for pred in preds]

@@ -1,7 +1,13 @@
 from lightning.pytorch import LightningDataModule
 import albumentations as A
 from torchvision.transforms import v2
+from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
+import pandas as pd
+import os
+import time
+import inspect
+
 from abc import ABC, abstractmethod
 
 class TorchVisionDataModule(LightningDataModule, ABC):
@@ -44,6 +50,35 @@ class TorchVisionDataModule(LightningDataModule, ABC):
         self.test_dataset = None
 
     ###### Dataset Methods ######
+    def _get_transform(self, image_set, ignore_transforms=False):
+        if ignore_transforms:
+            return v2.ToTensor()
+        elif image_set == 'train':
+            return self.train_transform
+        elif image_set == 'val' or image_set == 'test':
+            return self.eval_transform
+        
+    def _get_target_transform(self, image_set, ignore_transforms=False):
+        if ignore_transforms:
+            return None
+        elif image_set == 'train':
+            return self.train_target_transform
+        elif image_set == 'val' or image_set == 'test':
+            return self.eval_target_transform
+    
+    def _get_transforms(self, image_set, ignore_transforms=False):
+        if ignore_transforms:
+            return None
+        elif image_set == 'train':
+            return self.train_transforms
+        elif image_set == 'val' or image_set == 'test':
+            return self.eval_transforms
+            
+    @abstractmethod
+    def _get_datasets(self, ignore_transforms):
+        """Get Train/Validation/Test datasets"""
+        raise NotImplementedError
+    
     @abstractmethod
     def _setup(self):
         """Dataset initialization"""
@@ -54,15 +89,21 @@ class TorchVisionDataModule(LightningDataModule, ABC):
     
     def train_dataloader(self) -> list[str]:
         """Create train dataloader"""
-        raise NotImplementedError
+        return DataLoader(self.train_dataset, batch_size=self.batch_size, 
+                          shuffle=True, num_workers=self.num_workers,
+                          collate_fn=self.collate_fn if 'collate_fn' in [mem[0] for mem in inspect.getmembers(self)] else None)
     
     def val_dataloader(self) -> list[str]:
         """Create validation dataloader"""
-        raise NotImplementedError
+        return DataLoader(self.val_dataset, batch_size=self.batch_size, 
+                          shuffle=False, num_workers=self.num_workers,
+                          collate_fn=self.collate_fn if 'collate_fn' in [mem[0] for mem in inspect.getmembers(self)] else None)
     
     def test_dataloader(self) -> list[str]:
         """Create test dataloader"""
-        raise NotImplementedError
+        return DataLoader(self.test_dataset, batch_size=self.batch_size, 
+                          shuffle=False, num_workers=self.num_workers,
+                          collate_fn=self.collate_fn if 'collate_fn' in [mem[0] for mem in inspect.getmembers(self)] else None)
     
     ###### Display methods ######
     def _denormalize_image(self, img, image_set='train'):
@@ -81,7 +122,7 @@ class TorchVisionDataModule(LightningDataModule, ABC):
         return img
     
     @abstractmethod
-    def _show_image_and_target(self, img, target, image_set='train', denormalize=True, ax=None):
+    def _show_image_and_target(self, img, target, image_set='train', denormalize=True, ax=None, anomaly_indices=None):
         """Show the image and the target"""
         raise NotImplementedError
 
@@ -101,6 +142,75 @@ class TorchVisionDataModule(LightningDataModule, ABC):
             plt.show()
     
     ###### Validation Methods ######
+    @abstractmethod
+    def _output_filtered_annotation(self, df_img_results, output_dir, image_set):
+        """Output an annotation file whose anomaly images are excluded"""
+        raise NotImplementedError
+    
+    @abstractmethod
+    def _validate_annotation(self, imgs, targets, i_baches, batch_size, anomaly_save_path, denormalize):
+        """Validate the annotation"""
+        raise NotImplementedError
+    
+    def _validate_dataset(self, image_set, dataloader, result_dir, output_normal_annotation, ignore_transforms):
+        # Create anomaly image folder
+        anomaly_image_path = f'{result_dir}/anomaly_images/{image_set}'
+        os.makedirs(anomaly_image_path, exist_ok=True)
+        # Validate the annotation of the dataset
+        print(f'Validate the annotations of {image_set}_dataset')
+        start = time.time()
+        img_results = []
+        target_results = []
+        for i, (imgs, targets) in enumerate(dataloader):
+            img_validations, target_validations = self._validate_annotation(imgs, targets, i, dataloader.batch_size, anomaly_image_path, 
+                                                                            denormalize=not ignore_transforms)
+            img_results.extend(img_validations)
+            target_results.extend(target_validations)
+            if i%100 == 0:  # Show progress every 100 times
+                print(f'Validating the annotations of {image_set}_dataset: {i}/{len(dataloader)}, elapsed_time: {time.time() - start}')
+        # Output the validation result
+        df_img_results = pd.DataFrame(img_results)
+        df_img_results.to_csv(f'{result_dir}/{image_set}_img_validation.csv')
+        df_target_results = pd.DataFrame(target_results)
+        df_target_results.to_csv(f'{result_dir}/{image_set}_target_validation.csv')
+        print(f'Number of anomaly images in {image_set}_dataset: {df_img_results["anomaly"].sum()}')
+        # Output a new annotation file whose anomaly images are excluded if `output_normal_annotation` is True
+        if output_normal_annotation:
+            self._output_filtered_annotation(df_img_results, result_dir, image_set)
+
+    def validate_dataset(self, result_dir=None, output_normal_annotation=False, ignore_transforms=True,
+                         validate_testset=False):
+        """Validate the annotations"""
+        if self.train_dataset is None or self.val_dataset is None:
+            raise RuntimeError('Run the `setup()` method before the validation')
+        if result_dir == None:
+            result_dir = f'./ann_validation/{self.dataset_name}'
+        # Get the datasets for the annotation validation
+        if ignore_transforms:
+            trainset, valset, testset = self._get_datasets(ignore_transforms=ignore_transforms)
+            trainloader = DataLoader(trainset, batch_size=1, 
+                                     shuffle=False, num_workers=self.num_workers,
+                                     collate_fn=self.collate_fn if 'collate_fn' in [mem[0] for mem in inspect.getmembers(self)] else None)
+            valloader = DataLoader(valset, batch_size=1, 
+                                   shuffle=False, num_workers=self.num_workers,
+                                   collate_fn=self.collate_fn if 'collate_fn' in [mem[0] for mem in inspect.getmembers(self)] else None)
+            testloader = DataLoader(testset, batch_size=1,
+                                    shuffle=False, num_workers=self.num_workers,
+                                    collate_fn=self.collate_fn if 'collate_fn' in [mem[0] for mem in inspect.getmembers(self)] else None)
+        else:
+            trainloader = self.train_dataloader()
+            valloader = self.val_dataloader()
+            testloader = self.test_dataloader()
+            
+        os.makedirs(result_dir, exist_ok=True)
+
+        # Validate the annotation of train_dataset
+        self._validate_dataset('train', trainloader, result_dir, output_normal_annotation, ignore_transforms)
+        # Validate the annotation of val_dataset
+        self._validate_dataset('val', valloader, result_dir, output_normal_annotation, ignore_transforms)
+        # Validate the annotation of test_dataset
+        if validate_testset:
+            self._validate_dataset('test', testloader, result_dir, output_normal_annotation, ignore_transforms)
     
     ###### Transform Methods ######
     @property

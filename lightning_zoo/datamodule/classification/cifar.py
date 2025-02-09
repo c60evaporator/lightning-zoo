@@ -1,7 +1,6 @@
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from torchvision.transforms import v2
-from torchvision.datasets import CIFAR10
 import cv2
 
 from .base_classification import ClassificationDataModule
@@ -21,37 +20,32 @@ class CIFAR10DataModule(ClassificationDataModule):
         self.download = download
     
     ###### Dataset Methods ######
-    def _get_datasets(self):
-        """Dataset initialization"""
+    def _get_datasets(self, ignore_transforms=False):
+        """Get Train/Validation/Test datasets"""
         train_dataset = CIFAR10TV(
             self.root,
             train=True,
-            transform=self.train_transform,
-            target_transform=self.train_target_transform,
+            transform=self._get_transform('train', ignore_transforms),
+            target_transform=self._get_target_transform('train', ignore_transforms),
             download=self.download
         )
         val_dataset = CIFAR10TV(
             self.root,
             train=False,
-            transform=self.eval_transform,
-            target_transform=self.eval_target_transform,
+            transform=self._get_transform('val', ignore_transforms),
+            target_transform=self._get_target_transform('val', ignore_transforms),
             download=self.download
         )
         test_dataset = CIFAR10TV(
             self.root,
             train=False,
-            transform=self.eval_transform,
-            target_transform=self.eval_target_transform,
+            transform=self._get_transform('test', ignore_transforms),
+            target_transform=self._get_target_transform('test', ignore_transforms),
             download=self.download
         )
-        self.class_to_idx = train_dataset.class_to_idx
-        self.idx_to_class = {v: k for k, v in train_dataset.class_to_idx.items()}
         return train_dataset, val_dataset, test_dataset
     
     ###### Validation methods ######
-    def validate_annotation(self, result_path='./ann_validation', use_instance_loader=False):
-        """Validate the annotations"""
-        pass
 
     ###### Transform Methods ######
     @property

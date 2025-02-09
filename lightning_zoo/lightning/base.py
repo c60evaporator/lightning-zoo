@@ -90,10 +90,12 @@ class TorchVisionModule(pl.LightningModule, ABC):
         raise NotImplementedError
     
     @property
+    @abstractmethod
     def _default_tuned_layers(self) -> list[str]:
         """Layers subject to the fine tuning"""
-        return []
-
+        raise NotImplementedError
+    
+    @abstractmethod
     def _replace_transferred_layers(self) -> None:
         """Replace layers for transfer learning"""
         raise NotImplementedError
@@ -199,7 +201,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
         loss = self._calc_val_loss(batch)
         # Record the loss
         if loss is not None:
-            self.log("val_loss", loss.item())
+            self.log("val_loss", loss.item(), on_epoch=True, prog_bar=True, logger=True)
             self.val_running_loss += loss.item()
         self.val_last_batch = batch_idx
         # Store the predictions and targets
@@ -207,7 +209,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
         self.val_batch_preds.extend(self._get_preds_cpu(batch))
 
     @abstractmethod
-    def _calc_epoch_metrics(self, targets, preds):
+    def _calc_epoch_metrics(self, preds, targets):
         """Calculate the metrics from the targets and predictions"""
         raise NotImplementedError
 
@@ -220,7 +222,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
             self.val_running_loss = 0.0
             print(f"Epoch {self.i_epoch}: val_loss={epoch_val_loss}")
         # Calculate the metrics
-        metrics = self._calc_epoch_metrics(self.val_batch_targets, self.val_batch_preds)
+        metrics = self._calc_epoch_metrics(self.val_batch_preds, self.val_batch_targets)
         print(f'Epoch {self.i_epoch}: ' + ' '.join([f'{k}={v}' for k, v in metrics.items()]))
         self.val_epoch_metrics.append(metrics)
         # Initialize the lists for the next epoch
@@ -240,15 +242,15 @@ class TorchVisionModule(pl.LightningModule, ABC):
     def on_test_epoch_end(self):
         """Epoch end processes during the test (E.g., calculate the metrics)"""
         # Calculate the metrics
-        metrics = self._calc_epoch_metrics(self.test_batch_targets, self.test_batch_preds)
+        metrics = self._calc_epoch_metrics(self.test_batch_preds, self.test_batch_targets)
         print(f'Epoch {self.i_epoch}: ' + ' '.join([f'{k}={v}' for k, v in metrics.items()]))
         self.test_epoch_metrics.append(metrics)        
         # Initialize the lists for the next epoch
         self.test_batch_targets = []
         self.test_batch_preds = []
         # Record the metrics
-        for metric_name, metric_value in metrics.items():
-            self.log(f"test_{metric_name}", metric_value)
+        # for metric_name, metric_value in metrics.items():
+        #     self.log(f"test_{metric_name}", metric_value)
         # Increment the epoch
         self.i_epoch += 1
 

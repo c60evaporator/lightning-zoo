@@ -9,7 +9,7 @@ sys.path.append(ROOT)
 import torch
 
 # General Parameters
-EPOCHS = 20
+EPOCHS = 30
 BATCH_SIZE = 128
 NUM_WORKERS = 4
 DATA_ROOT = './datasets/CIFAR10'
@@ -53,6 +53,7 @@ import cv2
 
 from lightning_zoo.datamodule.classification.cifar import CIFAR10DataModule
 
+# Transforms
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
 # Transforms for training

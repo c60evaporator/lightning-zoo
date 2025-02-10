@@ -5,7 +5,7 @@ import json
 import os
 
 from .base_detection import DetectionDataModule
-from ...dataset.detection.coco import CocoDetectionTV
+from torch_extend.dataset.detection.coco import CocoDetectionTV
 
 class CocoDetectionDataModule(DetectionDataModule):
     def __init__(self, batch_size, num_workers, 

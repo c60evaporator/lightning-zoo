@@ -4,6 +4,7 @@ import numpy as np
 
 from ..base import TorchVisionModule
 from ...metrics.detection import average_precisions
+from ...display.detection import show_average_precisions
 
 class DetectionModule(TorchVisionModule):
     def __init__(self, class_to_idx: dict[str, int],
@@ -51,15 +52,15 @@ class DetectionModule(TorchVisionModule):
         """Calculate the validation loss from the batch"""
         return None
     
-    def _get_targets_cpu(self, batch):
-        """Get the targets and store them to CPU as a list"""
-        return [{k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in target.items()}
-                for target in batch[1]]
-    
-    def _get_preds_cpu(self, batch):
+    def _get_preds_cpu(self, inputs):
         """Get the predictions and store them to CPU as a list"""
         return [{k: v.cpu() for k, v in pred.items()} 
-                for pred in self.model(batch[0])]
+                for pred in self.model(inputs)]
+    
+    def _get_targets_cpu(self, targets):
+        """Get the targets and store them to CPU as a list"""
+        return [{k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in target.items()}
+                for target in targets]
     
     def _calc_epoch_metrics(self, preds, targets):
         """Calculate the metrics from the targets and predictions"""
@@ -68,5 +69,11 @@ class DetectionModule(TorchVisionModule):
                                  self.idx_to_class, 
                                  iou_threshold=self.ap_iou_threshold, conf_threshold=self.ap_conf_threshold)
         mean_average_precision = np.mean([v['average_precision'] for v in aps.values()])
+        self.aps = aps
         print(f'mAP={mean_average_precision}')
         return {'mAP': mean_average_precision}
+    
+    ##### Display ######
+    def plot_average_precisions(self):
+        """Plot the average precisions"""
+        show_average_precisions(self.aps)

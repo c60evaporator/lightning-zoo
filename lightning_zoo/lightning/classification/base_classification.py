@@ -56,18 +56,18 @@ class ClassificationModule(TorchVisionModule):
         """Calculate the validation loss from the batch"""
         # Calculate losses in the same way as training.
         return self._calc_train_loss(batch)
-
-    def _get_targets_cpu(self, batch):
-        """Get the targets and store them to CPU as a list"""
-        return [target.item() for target in batch[1]]
     
-    def _get_preds_cpu(self, batch):
+    def _get_preds_cpu(self, inputs):
         """Get the predictions and store them to CPU as a list"""
-        return [pred.cpu() for pred in self.model(batch[0])]
+        return [pred.cpu() for pred in self.model(inputs)]
+
+    def _get_targets_cpu(self, targets):
+        """Get the targets and store them to CPU as a list"""
+        return [target.item() for target in targets]
 
     def _calc_epoch_metrics(self, preds, targets):
         """Calculate the metrics from the targets and predictions"""
-        # Calculate the accuracy
+        # Calculate the accuracy, precision, recall, and f1 score
         predicted_labels = [torch.argmax(pred).item() for pred in preds]
         accuracy = accuracy_score(targets, predicted_labels)
         precision_macro = precision_score(targets, predicted_labels, average='macro')

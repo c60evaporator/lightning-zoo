@@ -1,16 +1,18 @@
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from torchvision.transforms import v2
+from torchvision.datasets.utils import download_and_extract_archive
+from torchvision.datasets.voc import DATASET_YEAR_DICT
 import json
+import os
 
 from .base_detection import DetectionDataModule
-from ...dataset.detection.coco import CocoDetectionTV
+from torch_extend.dataset.detection.voc import VOCDetectionTV
 
-class CocoDataModule(DetectionDataModule):
+class VOCDataModule(DetectionDataModule):
     def __init__(self, batch_size, num_workers, 
-                 root, train_dir='train2017', val_dir='val2017',
-                 train_annFile=None, val_annFile=None,
-                 dataset_name='COCO',
+                 root, idx_to_class=None, image_set='train',
+                 dataset_name='VOC',
                  train_transforms=None, train_transform=None, train_target_transform=None,
                  eval_transforms=None, eval_transform=None, eval_target_transform=None):
         super().__init__(batch_size, num_workers, dataset_name,
@@ -30,30 +32,39 @@ class CocoDataModule(DetectionDataModule):
             self.val_annFile = f'{self.root}/annotations/instances_{self.val_dir}.json'
 
     ###### Dataset Methods ######
+    def prepare_data(self):
+        """Download VOC Detection 2012 dataset"""
+        url = DATASET_YEAR_DICT["2012"]["url"]
+        filename = DATASET_YEAR_DICT["2012"]["filename"]
+        md5 = DATASET_YEAR_DICT["2012"]["md5"]
+        download_and_extract_archive(url, self.root, filename=filename, md5=md5)
+
     def _get_datasets(self, ignore_transforms=False):
         """Dataset initialization"""
         train_dataset = CocoDetectionTV(
             f'{self.root}/{self.train_dir}',
             annFile=self.train_annFile,
-            transforms=self.train_transforms if not ignore_transforms else None,
-            transform=v2.ToTensor() if ignore_transforms else None
+            transforms=self._get_transforms('train', ignore_transforms),
+            transform=self._get_transform('train', ignore_transforms),
         )
         val_dataset = CocoDetectionTV(
             f'{self.root}/{self.val_dir}',
             annFile=self.val_annFile, 
-            transforms=self.eval_transforms if not ignore_transforms else None,
-            transform=v2.ToTensor() if ignore_transforms else None
+            transforms=self._get_transforms('val', ignore_transforms),
+            transform=self._get_transform('val', ignore_transforms),
         )
         test_dataset = CocoDetectionTV(
             f'{self.root}/{self.val_dir}',
             annFile=self.val_annFile, 
-            transforms=self.eval_transforms if not ignore_transforms else None,
-            transform=v2.ToTensor() if ignore_transforms else None
+            transforms=self._get_transforms('test', ignore_transforms),
+            transform=self._get_transform('test', ignore_transforms),
         )
         return train_dataset, val_dataset, test_dataset
     
     ###### Validation Methods ######
-    def _output_filtered_annotation(self, del_img_ids, output_dir, image_set='train'):
+    def _output_filtered_annotation(self, df_img_results, result_dir, image_set):
+        print('Exporting the filtered annotaion file...')
+        del_img_ids = df_img_results[df_img_results['anomaly']]['image_id'].tolist()
         if image_set=='train':
             coco_dataset = self.train_dataset.coco.dataset
         elif image_set == 'val':
@@ -78,7 +89,8 @@ class CocoDataModule(DetectionDataModule):
             'annotations': filtered_annotations,
             'categories': coco_categories
         }
-        with open(f'{output_dir}/instances_{image_set}_filtered.json', 'w') as f:
+        os.makedirs(f'{result_dir}/filtered_ann', exist_ok=True)
+        with open(f'{result_dir}/filtered_ann/instances_{image_set}_filtered.json', 'w') as f:
             json.dump(filtered_coco, f, indent=None)
         
     ###### Transform Methods ######
@@ -99,3 +111,5 @@ class CocoDataModule(DetectionDataModule):
             A.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),  # Normalization (mean and std of the ImageNet dataset for normalizing)
             ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
         ], bbox_params=A.BboxParams(format='coco'))
+    
+    ###### Other Methods ######

@@ -2,6 +2,7 @@ import torch
 import lightning.pytorch as pl
 import matplotlib.pyplot as plt
 import time
+import math
 
 from abc import ABC, abstractmethod
 
@@ -127,11 +128,11 @@ class TorchVisionModule(pl.LightningModule, ABC):
         self.i_epoch = 0
         # For training logging
         self.train_epoch_losses = []
-        self.train_running_loss = 0.0
+        self.train_step_losses = []
         # For validation logging
         self.val_epoch_losses = []
-        self.val_running_loss = 0.0
-        self.val_epoch_metrics = []
+        self.val_step_losses = []
+        self.val_metrics_all = []
         self.val_batch_targets = []
         self.val_batch_preds = []
         # For test logging
@@ -153,19 +154,13 @@ class TorchVisionModule(pl.LightningModule, ABC):
     def _calc_train_loss(self, batch) -> torch.Tensor:
         """Calculate the training loss from the batch"""
         raise NotImplementedError
-    
-    def on_train_epoch_start(self) -> None:
-        """Epoch start processes during the training"""
-        # Increment the epoch
-        self.i_epoch += 1
         
     def training_step(self, batch, batch_idx) -> torch.Tensor:
         """Training"""
         loss = self._calc_train_loss(batch)
         # Record the loss
         self.log("train_loss", loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        self.train_running_loss += loss.item()
-        self.train_last_batch = batch_idx
+        self.train_step_losses.append(loss.item())
         # first_epoch_lr_scheduler
         if self.first_epoch_lr_scheduler is not None:
             self.first_epoch_lr_scheduler.step()
@@ -174,14 +169,14 @@ class TorchVisionModule(pl.LightningModule, ABC):
     def on_train_epoch_end(self) -> None:
         """Epoch end processes during the training"""
         # Record the epoch loss
-        epoch_train_loss = self.train_running_loss / (self.train_last_batch+1)
+        epoch_train_loss = sum(self.train_step_losses) / len(self.train_step_losses)
         self.train_epoch_losses.append(epoch_train_loss)
-        self.train_running_loss = 0.0
+        self.train_step_losses = []
         # Disable first_epoch_lr_scheduler
         self.first_epoch_lr_scheduler = None
         # LR Scheduler is automatically called by PyTorch Lightning because `interval` is "epoch" (See https://lightning.ai/docs/pytorch/stable/common/optimization.html#learning-rate-scheduling)
 
-        print(f'Epoch {self.i_epoch}: finished! train_loss={epoch_train_loss}, elapsed_time={time.time()-self.start_time:.2f} sec')
+        print(f'Epoch {self.current_epoch+1}: finished! train_loss={epoch_train_loss}, elapsed_time={time.time()-self.start_time:.2f} sec')
     
     ###### Validation ######
     @abstractmethod
@@ -190,13 +185,13 @@ class TorchVisionModule(pl.LightningModule, ABC):
         raise NotImplementedError
     
     @abstractmethod
-    def _get_targets_cpu(self, batch):
-        """Get the targets and store them to CPU as a list"""
-        raise NotImplementedError
-    
-    @abstractmethod
-    def _get_preds_cpu(self, batch):
+    def _get_preds_cpu(self, inputs):
         """Get the predictions and store them to CPU as a list"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def _get_targets_cpu(self, targets):
+        """Get the targets and store them to CPU as a list"""
         raise NotImplementedError
 
     def validation_step(self, batch, batch_idx):
@@ -206,11 +201,10 @@ class TorchVisionModule(pl.LightningModule, ABC):
         # Record the loss
         if loss is not None:
             self.log("val_loss", loss.item(), on_epoch=True, prog_bar=True, logger=True)
-            self.val_running_loss += loss.item()
-        self.val_last_batch = batch_idx
-        # Store the predictions and targets
-        self.val_batch_targets.extend(self._get_targets_cpu(batch))
-        self.val_batch_preds.extend(self._get_preds_cpu(batch))
+            self.val_step_losses.append(loss.item())
+        # Store the predictions and targets for calculating metrics
+        self.val_batch_preds.extend(self._get_preds_cpu(batch[0]))
+        self.val_batch_targets.extend(self._get_targets_cpu(batch[1]))
 
     @abstractmethod
     def _calc_epoch_metrics(self, preds, targets):
@@ -220,15 +214,15 @@ class TorchVisionModule(pl.LightningModule, ABC):
     def on_validation_epoch_end(self):
         """Epoch end processes during the validation (E.g., calculate the loss and metrics)"""
         # Record the epoch loss
-        if self.val_running_loss > 0:
-            epoch_val_loss = self.val_running_loss / (self.val_last_batch+1)
+        if len(self.val_step_losses) > 0:
+            epoch_val_loss = sum(self.val_step_losses) / len(self.val_step_losses)
             self.val_epoch_losses.append(epoch_val_loss)
-            self.val_running_loss = 0.0
-            print(f"Epoch {self.i_epoch}: val_loss={epoch_val_loss}")
+            self.val_step_losses = []
+            print(f"Epoch {self.current_epoch+1}: val_loss={epoch_val_loss}")
         # Calculate the metrics
         metrics = self._calc_epoch_metrics(self.val_batch_preds, self.val_batch_targets)
-        print(f'Epoch {self.i_epoch}: ' + ' '.join([f'{k}={v}' for k, v in metrics.items()]))
-        self.val_epoch_metrics.append(metrics)
+        print(f'Epoch {self.current_epoch+1}: ' + ' '.join([f'{k}={v}' for k, v in metrics.items()]))
+        self.val_metrics_all.append(metrics)
         # Initialize the lists for the next epoch
         self.val_batch_targets = []
         self.val_batch_preds = []
@@ -247,7 +241,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
         """Epoch end processes during the test (E.g., calculate the metrics)"""
         # Calculate the metrics
         metrics = self._calc_epoch_metrics(self.test_batch_preds, self.test_batch_targets)
-        print(f'Epoch {self.i_epoch}: ' + ' '.join([f'{k}={v}' for k, v in metrics.items()]))
+        print(f'Epoch {self.current_epoch+1}: ' + ' '.join([f'{k}={v}' for k, v in metrics.items()]))
         self.test_epoch_metrics.append(metrics)        
         # Initialize the lists for the next epoch
         self.test_batch_targets = []
@@ -255,8 +249,6 @@ class TorchVisionModule(pl.LightningModule, ABC):
         # Record the metrics
         # for metric_name, metric_value in metrics.items():
         #     self.log(f"test_{metric_name}", metric_value)
-        # Increment the epoch
-        self.i_epoch += 1
 
     ###### Prediction ######
     def predict_step(self, batch):
@@ -338,21 +330,21 @@ class TorchVisionModule(pl.LightningModule, ABC):
     def plot_train_history(self):
         """Plot the training history"""
         # Create a figure and axes
-        n_metrics = len(self.val_epoch_metrics[0])
+        n_metrics = len(self.val_metrics_all[0])
         fig, axes = plt.subplots(n_metrics+1, 1, figsize=(5, 4*(n_metrics+1)))
         colors = plt.get_cmap('tab10').colors
         # Plot the training and validation losses
-        axes[0].plot(range(1, self.i_epoch+1), self.train_epoch_losses, label='train_loss', color=colors[0])
+        axes[0].plot(range(1, self.current_epoch+1), self.train_epoch_losses, label='train_loss', color=colors[0])
         if len(self.val_epoch_losses) > 0:
-            axes[0].plot(range(0, self.i_epoch+1), self.val_epoch_losses, label='val_loss', color=colors[1])
+            axes[0].plot(range(0, self.current_epoch+1), self.val_epoch_losses, label='val_loss', color=colors[1])
         axes[0].legend()
         axes[0].set_xlabel('Epoch')
         axes[0].set_ylabel('Loss')
-        axes[0].set_title('SLosses')
+        axes[0].set_title('Losses in each epoch')
         # Plot the validation metrics
-        for i, metric_name in enumerate(self.val_epoch_metrics[0].keys()):
-            axes[i+1].plot(range(0, self.i_epoch+1),
-                           [metrics[metric_name] for metrics in self.val_epoch_metrics],
+        for i, metric_name in enumerate(self.val_metrics_all[0].keys()):
+            axes[i+1].plot(range(0, self.current_epoch+1),
+                           [metrics[metric_name] for metrics in self.val_metrics_all],
                            label=f'val_{metric_name}',
                            color=colors[1])
             axes[i+1].set_xlabel('Epoch')

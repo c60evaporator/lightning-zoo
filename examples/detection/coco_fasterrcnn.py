@@ -33,9 +33,11 @@ from albumentations.pytorch import ToTensorV2
 from lightning_zoo.datamodule.detection.coco import CocoDetectionDataModule
 
 # Preprocessing
+IMAGENET_MEAN = [0.485, 0.456, 0.406]
+IMAGENET_STD = [0.229, 0.224, 0.225]
 transforms = A.Compose([
     A.Resize(640, 640),  # Resize the image to (640, 640)
-    A.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),  # Normalization (mean and std of the imagenet dataset for normalizing)
+    A.Normalize(IMAGENET_MEAN, IMAGENET_STD),  # Normalization (mean and std of the imagenet dataset for normalizing)
     ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
 ], bbox_params=A.BboxParams(format='coco', label_fields=['class_labels']))
 

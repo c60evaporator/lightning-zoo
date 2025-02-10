@@ -6,6 +6,7 @@ At least, the following factors should be specified
 
 - [Transforms]()
 - [Dataset Type]()
+- [Display images and annotations]()
 
 ### Transforms
 
@@ -113,6 +114,8 @@ Cityscapes
 #### Panoptic Segmentation
 
 Cityscapes
+
+### Display images and annotations
 
 ## Advanced Usage
 

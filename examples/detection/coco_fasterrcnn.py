@@ -30,7 +30,7 @@ NUM_GPU = 1
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-from lightning_zoo.datamodule.detection.coco import CocoDataModule
+from lightning_zoo.datamodule.detection.coco import CocoDetectionDataModule
 
 # Preprocessing
 transforms = A.Compose([
@@ -40,11 +40,11 @@ transforms = A.Compose([
 ], bbox_params=A.BboxParams(format='coco', label_fields=['class_labels']))
 
 # Datamodule
-datamodule = CocoDataModule(batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, root=DATA_ROOT,
-                            train_annFile='./ann_validation/COCO/filtered_ann/instances_train_filtered.json',
-                            val_annFile='./ann_validation/COCO/filtered_ann/instances_val_filtered.json',
-                            dataset_name='COCO',
-                            train_transforms=transforms, eval_transforms=transforms)
+datamodule = CocoDetectionDataModule(batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, root=DATA_ROOT,
+                                     train_annFile='./ann_validation/COCO/filtered_ann/instances_train_filtered.json',
+                                     val_annFile='./ann_validation/COCO/filtered_ann/instances_val_filtered.json',
+                                     dataset_name='COCO',
+                                     train_transforms=transforms, eval_transforms=transforms)
 datamodule.setup()
 
 # Validate the dataset

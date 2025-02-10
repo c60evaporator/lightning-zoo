@@ -1,6 +1,7 @@
 import torch
 import lightning.pytorch as pl
 import matplotlib.pyplot as plt
+import time
 
 from abc import ABC, abstractmethod
 
@@ -56,7 +57,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
             self.lr_step_size = 8 if lr_step_size is None else lr_step_size
             self.lr_gamma = 0.1 if lr_gamma is None else lr_gamma
         elif lr_scheduler == "multisteplr":
-            self.lr_steps = [16, 22] if lr_steps is None else lr_steps
+            self.lr_steps = [16, 24] if lr_steps is None else lr_steps
             self.lr_gamma = 0.1 if lr_gamma is None else lr_gamma
         elif lr_scheduler == "exponentiallr":    
             self.lr_gamma = 0.1 if lr_gamma is None else lr_gamma
@@ -118,6 +119,8 @@ class TorchVisionModule(pl.LightningModule, ABC):
         raise NotImplementedError
     
     def setup(self, stage: str | None = None):
+        """Setup the model"""
+        self.start_time = time.time()
         # Set the model and its parameters
         self._set_model_and_params()
         
@@ -138,6 +141,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
 
         # Additional processes during the setup
         self._setup()
+        print(f"Setup completed: elapsed_time={time.time()-self.start_time:.2f} sec")
 
     ###### Training ######
     @abstractmethod
@@ -171,13 +175,13 @@ class TorchVisionModule(pl.LightningModule, ABC):
         """Epoch end processes during the training"""
         # Record the epoch loss
         epoch_train_loss = self.train_running_loss / (self.train_last_batch+1)
-        print(f"Epoch {self.i_epoch}: train_loss={epoch_train_loss}")
         self.train_epoch_losses.append(epoch_train_loss)
         self.train_running_loss = 0.0
         # Disable first_epoch_lr_scheduler
         self.first_epoch_lr_scheduler = None
         # LR Scheduler is automatically called by PyTorch Lightning because `interval` is "epoch" (See https://lightning.ai/docs/pytorch/stable/common/optimization.html#learning-rate-scheduling)
 
+        print(f'Epoch {self.i_epoch}: finished! train_loss={epoch_train_loss}, elapsed_time={time.time()-self.start_time:.2f} sec')
     
     ###### Validation ######
     @abstractmethod
@@ -269,13 +273,14 @@ class TorchVisionModule(pl.LightningModule, ABC):
                                         weight_decay=self.weight_decay, nesterov="nesterov" in self.opt_name)
         elif self.opt_name == "rmsprop":
             optimizer = torch.optim.RMSprop(parameters, lr=self.lr, momentum=self.momentum, 
-                                            weight_decay=self.weight_decay, alpha=self.rmsprop_alpha, eps=self.eps)
+                                            weight_decay=self.weight_decay, eps=self.eps, alpha=self.rmsprop_alpha)
         elif self.opt_name == "adam":
-            optimizer = torch.optim.Adam(parameters, lr=self.lr, weight_decay=self.weight_decay, betas=self.adam_betas, eps=self.eps)
+            optimizer = torch.optim.Adam(parameters, lr=self.lr, weight_decay=self.weight_decay, eps=self.eps, betas=self.adam_betas)
         elif self.opt_name == "adamw":
-            optimizer = torch.optim.AdamW(parameters, lr=self.lr, weight_decay=self.weight_decay, betas=self.adam_betas, eps=self.eps)
+            optimizer = torch.optim.AdamW(parameters, lr=self.lr, weight_decay=self.weight_decay, eps=self.eps, betas=self.adam_betas)
         
         # lr_schedulers (https://lightning.ai/docs/pytorch/stable/common/optimization.html#learning-rate-scheduling)
+        lr_scheduler_config = None
         if self.lr_scheduler == "steplr":
             lr_scheduler_config = {
                 "scheduler": torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.lr_step_size, gamma=self.lr_gamma),
@@ -304,7 +309,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
             }
         elif self.lr_scheduler == "reducelronplateau":
             lr_scheduler_config = {
-                "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=self.lr_gamma, patience=self.lr_patience, verbose=True),
+                "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=self.lr_gamma, patience=self.lr_patience),
                 "monitor": "train_loss",
                 "interval": "epoch",
                 "frequency": 1
@@ -318,6 +323,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
                 optimizer, start_factor=warmup_factor, total_iters=warmup_iters
             )
 
+        print(f"Optimizers and LR schedulers are configured: elapsed_time={time.time()-self.start_time:.2f} sec, optimizer={optimizer}, lr_scheduler={lr_scheduler_config}")
         if self.lr_scheduler is None:
             # Return single optimizer (https://lightning.ai/docs/pytorch/stable/common/lightning_module.html#configure-optimizers)
             return optimizer

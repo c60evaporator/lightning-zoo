@@ -7,7 +7,7 @@ import os
 from .base_detection import DetectionDataModule
 from ...dataset.detection.coco import CocoDetectionTV
 
-class CocoDataModule(DetectionDataModule):
+class CocoDetectionDataModule(DetectionDataModule):
     def __init__(self, batch_size, num_workers, 
                  root, train_dir='train2017', val_dir='val2017',
                  train_annFile=None, val_annFile=None,
@@ -103,3 +103,15 @@ class CocoDataModule(DetectionDataModule):
             A.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),  # Normalization (mean and std of the ImageNet dataset for normalizing)
             ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
         ], bbox_params=A.BboxParams(format='coco'))
+    
+    ###### Other Methods ######
+    def _sample_dataset(self, dataset, image_ratio, labels):
+        """Sample the dataset"""
+        # Sample the anntations
+
+        # Save the sampled images
+        pass
+
+    def sample_dataset(self, image_ratio, labels):
+        """Sample the dataset"""
+        

@@ -17,14 +17,29 @@ Furthermore, you can create original model. See [here]()
 
 #### Classification
 
-|LightningModule Class|Model type|Model class|Pretrained Weights|Available size by `model_weight` argument|
+|LightningModule Class|Model type|Base Model class|Pretrained Weights|Available size by `model_weight` argument|
 |---|---|---|---|---|
-|"vgg"|[VGG](https://arxiv.org/abs/1409.1556)|`torchvision.models.VGG`|○|`vgg11`, `vgg11_bn`, `vgg13`, `vgg13_bn`, `vgg16`, `vgg16_bn`, `vgg19`, `vgg19_bn`|
-|"resnet"|[ResNet](https://arxiv.org/abs/1512.03385)|`torchvision.models.VGG`|○|`vgg11`, `vgg11_bn`, `vgg13`, `vgg13_bn`, `vgg16`, `vgg16_bn`, `vgg19`, `vgg19_bn`|
+|VGGModule|[VGG](https://arxiv.org/abs/1409.1556)|`torchvision.models.VGG`|○|`vgg11`, `vgg11_bn`, `vgg13`, `vgg13_bn`, `vgg16`, `vgg16_bn`, `vgg19`, `vgg19_bn`|
+|ResNetModule|[ResNet](https://arxiv.org/abs/1512.03385)|`torchvision.models.ResNet`|○|`resnet18`, `resnet34`, `resnet50`, `resnet101`, `resnet152`, `resnext50_32x4d`, `resnext101_32x8d`, `resnext101_64x4d`, `wide_resnet50_2`, `wide_resnet101_2`|
 
 #### Object Detection
 
+#### Semantic Segmentation
+
 #### Instance Segmentation
+
+|LightningModule Class|Model type|Base Model class|Pretrained Weights|Available size by `model_weight` argument|
+|---|---|---|---|---|
+|MaskRCNNModule|[Mask R-CNN](https://arxiv.org/abs/1703.06870)|`torchvision.models.MaskRCNN`|○||
+|Mask2FormerModule (`task_type="instance"`)|[Mask2Former](https://arxiv.org/abs/2112.01527)|`transformers.models.Mask2FormerForUniversalSegmentation`|○||
+|SwinTransformerModule|[SwinTransformer](https://arxiv.org/abs/2103.14030)|`timm.models.SwinTransformer`|○||
+|EvaModule|[EVA](https://arxiv.org/abs/2211.07636)|`timm.models.Eva`|○||
+
+#### Panoptic Segmentation
+
+|LightningModule Class|Model type|Base Model class|Pretrained Weights|Available size by `model_weight` argument|
+|---|---|---|---|---|
+|Mask2FormerModule (`task_type="panoptic"`)|[Mask2Former](https://arxiv.org/abs/2112.01527)|`transformers.models.Mask2FormerForUniversalSegmentation`|○||
 
 #### Anomaly Detection
 

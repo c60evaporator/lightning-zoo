@@ -158,7 +158,7 @@ import matplotlib.pyplot as plt
 
 # CSV logger
 logger = CSVLogger(save_dir=f'./log/{datamodule.dataset_name}/{model.model_name}',
-                   name='LeNet', version=0)
+                   name=model.model_name)
 trainer = Trainer(accelerator, devices=NUM_GPU, max_epochs=EPOCHS, 
                   logger=logger, profiler="simple")
 trainer.fit(model, datamodule=datamodule)

@@ -1,8 +1,11 @@
 import torch
+from torchvision.transforms import v2
+import albumentations as A
 import lightning.pytorch as pl
 import matplotlib.pyplot as plt
+import numpy as np
 import time
-import math
+from PIL import Image
 
 from abc import ABC, abstractmethod
 
@@ -352,3 +355,31 @@ class TorchVisionModule(pl.LightningModule, ABC):
             axes[i+1].set_title(f'Validation {metric_name}')
         fig.tight_layout()
         plt.show()
+
+    def plot_prediction_from_val_dataset(self):
+        """Plot the predictions in the first minibatch of the validation dataset"""
+        # Get the first minibatch
+        inputs, targets = next(iter(self.val_dataloader()))
+        # Predict
+        self.model.eval()
+        with torch.no_grad():
+            outputs = self.model(inputs)
+        # Display the images
+
+    def plot_prediction_from_image(self, image_path):
+        """Plot the predictions from an image"""
+        # Load the image
+        image = Image.open(image_path)
+        # Preprocess the image using the same transform as the validation dataset
+        transform = self.val_dataloader().dataset.transform
+        if isinstance(transform, A.Compose):
+            image_tensor = transform(image=np.array(image))
+        elif isinstance(transform, v2.Compose):
+            image_tensor = transform(image)
+        else:
+            raise RuntimeError('The `transform` argument should be an instance of `albumentations.Compose` or `torchvision.transforms.Compose`.')
+        # Predict
+        self.model.eval()
+        with torch.no_grad():
+            outputs = self.model(image_tensor)
+        # Display the image

@@ -356,6 +356,11 @@ class TorchVisionModule(pl.LightningModule, ABC):
         fig.tight_layout()
         plt.show()
 
+    @abstractmethod
+    def _plot_predictions(self, images, preds):
+        """Plot the images with predictions"""
+        raise NotImplementedError
+
     def plot_prediction_from_val_dataset(self):
         """Plot the predictions in the first minibatch of the validation dataset"""
         # Get the first minibatch

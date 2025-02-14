@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from abc import abstractmethod
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+import matplotlib.pyplot as plt
 
 from ..base import TorchVisionModule
 
@@ -77,3 +78,13 @@ class ClassificationModule(TorchVisionModule):
                 'precision_macro': precision_macro,
                 'recall_macro': recall_macro,
                 'f1_macro': f1_macro}
+    
+    ##### Display ######
+    def _plot_predictions(self, images, preds, targets):
+        """Plot the images with predictions and ground truths"""
+        for i, (img, pred, target) in enumerate(zip(images, preds, targets)):
+            predicted_label = torch.argmax(pred).item()
+            img_permute = img.permute(1, 2, 0)
+            plt.imshow(img_permute)
+            plt.title(f'pred: {self.idx_to_class[predicted_label]}, true: {self.idx_to_class[target.item()]}')
+            plt.show()

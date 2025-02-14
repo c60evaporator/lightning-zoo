@@ -3,59 +3,59 @@ from albumentations.pytorch import ToTensorV2
 from torchvision.transforms import v2
 from torchvision.datasets.utils import download_and_extract_archive
 from torchvision.datasets.voc import DATASET_YEAR_DICT
-import json
+import shutil
 import os
 
 from .base_detection import DetectionDataModule
 from torch_extend.dataset.detection.voc import VOCDetectionTV
 
-class VOCDataModule(DetectionDataModule):
+class VOCDetectionDataModule(DetectionDataModule):
     def __init__(self, batch_size, num_workers, 
-                 root, idx_to_class=None, image_set='train',
-                 dataset_name='VOC',
+                 root, idx_to_class=None,
+                 dataset_name='VOC2012',
                  train_transforms=None, train_transform=None, train_target_transform=None,
                  eval_transforms=None, eval_transform=None, eval_target_transform=None):
         super().__init__(batch_size, num_workers, dataset_name,
                          train_transforms, train_transform, train_target_transform,
                          eval_transforms, eval_transform, eval_target_transform)
         self.root = root
-        self.train_dir = train_dir
-        self.val_dir = val_dir
-        # Annotation files
-        if train_annFile is not None:
-            self.train_annFile = train_annFile
-        else:
-            self.train_annFile = f'{self.root}/annotations/instances_{self.train_dir}.json'
-        if val_annFile is not None:
-            self.val_annFile = val_annFile
-        else:
-            self.val_annFile = f'{self.root}/annotations/instances_{self.val_dir}.json'
+        self.idx_to_class = idx_to_class
 
     ###### Dataset Methods ######
     def prepare_data(self):
         """Download VOC Detection 2012 dataset"""
+        # Download VOC2012 dataset
         url = DATASET_YEAR_DICT["2012"]["url"]
         filename = DATASET_YEAR_DICT["2012"]["filename"]
         md5 = DATASET_YEAR_DICT["2012"]["md5"]
-        download_and_extract_archive(url, self.root, filename=filename, md5=md5)
+        if not os.path.isfile(f'{self.root}/{filename}'):
+            download_and_extract_archive(url, self.root, filename=filename, md5=md5)
+            # Move the extracted files to the root directory
+            base_dir = DATASET_YEAR_DICT["2012"]["base_dir"]
+            voc_root = os.path.join(self.root, base_dir)
+            if os.path.isdir(voc_root):
+                shutil.move(f'{voc_root}/Annotations', self.root)
+                shutil.move(f'{voc_root}/ImageSets', self.root)
+                shutil.move(f'{voc_root}/JPEGImages', self.root)
+                shutil.move(f'{voc_root}/SegmentationClass', self.root)
+                shutil.move(f'{voc_root}/SegmentationObject', self.root)
+                # Delete the parent of voc_root
+                shutil.rmtree(os.path.join(self.root, os.path.dirname(base_dir)))
 
     def _get_datasets(self, ignore_transforms=False):
         """Dataset initialization"""
-        train_dataset = CocoDetectionTV(
-            f'{self.root}/{self.train_dir}',
-            annFile=self.train_annFile,
+        train_dataset = VOCDetectionTV(
+            self.root, image_set='train', download=False,
             transforms=self._get_transforms('train', ignore_transforms),
             transform=self._get_transform('train', ignore_transforms),
         )
-        val_dataset = CocoDetectionTV(
-            f'{self.root}/{self.val_dir}',
-            annFile=self.val_annFile, 
+        val_dataset = VOCDetectionTV(
+            self.root, image_set='val', download=False,
             transforms=self._get_transforms('val', ignore_transforms),
             transform=self._get_transform('val', ignore_transforms),
         )
-        test_dataset = CocoDetectionTV(
-            f'{self.root}/{self.val_dir}',
-            annFile=self.val_annFile, 
+        test_dataset = VOCDetectionTV(
+            self.root, image_set='val', download=False,
             transforms=self._get_transforms('test', ignore_transforms),
             transform=self._get_transform('test', ignore_transforms),
         )
@@ -64,52 +64,23 @@ class VOCDataModule(DetectionDataModule):
     ###### Validation Methods ######
     def _output_filtered_annotation(self, df_img_results, result_dir, image_set):
         print('Exporting the filtered annotaion file...')
-        del_img_ids = df_img_results[df_img_results['anomaly']]['image_id'].tolist()
-        if image_set=='train':
-            coco_dataset = self.train_dataset.coco.dataset
-        elif image_set == 'val':
-            coco_dataset = self.val_dataset.coco.dataset
-        else:
-            raise RuntimeError('The `image_set` argument should be "train" or "val"')
-        # Load the coco fields
-        coco_info = coco_dataset['info']
-        coco_licenses = coco_dataset['licenses']
-        coco_images = coco_dataset['images']
-        coco_annotations = coco_dataset['annotations']
-        coco_categories = coco_dataset['categories']
-        # Filter the images
-        filtered_images = [image for image in coco_images if image['id'] not in del_img_ids]
-        # Filter the annotations
-        filtered_annotations = [ann for ann in coco_annotations if ann['image_id'] not in del_img_ids]
-        # Output the filtered annotation JSON file
-        filtered_coco = {
-            'info': coco_info,
-            'licenses': coco_licenses,
-            'images': filtered_images,
-            'annotations': filtered_annotations,
-            'categories': coco_categories
-        }
-        os.makedirs(f'{result_dir}/filtered_ann', exist_ok=True)
-        with open(f'{result_dir}/filtered_ann/instances_{image_set}_filtered.json', 'w') as f:
-            json.dump(filtered_coco, f, indent=None)
+        # TODO: Implement this method
         
     ###### Transform Methods ######
     @property
     def default_train_transforms(self) -> v2.Compose | A.Compose:
         """Default transforms for preprocessing"""
         return A.Compose([
-            A.Resize(640, 640),  # Resize the image to (640, 640)
-            A.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),  # Normalization (mean and std of the ImageNet dataset for normalizing)
-            ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
-        ], bbox_params=A.BboxParams(format='coco'))
+            A.Normalize((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),  # Normalization from uint8 [0, 255] to float32 [0.0, 1.0]
+            ToTensorV2(),  # Convert from numpy.ndarray to torch.Tensor
+        ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
     
     @property
     def default_eval_transforms(self) -> v2.Compose | A.Compose:
         """Default transforms for preprocessing"""
         return A.Compose([
-            A.Resize(640, 640),  # Resize the image to (640, 640)
-            A.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),  # Normalization (mean and std of the ImageNet dataset for normalizing)
-            ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
-        ], bbox_params=A.BboxParams(format='coco'))
+            A.Normalize((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
+            ToTensorV2()
+        ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
     
     ###### Other Methods ######

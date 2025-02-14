@@ -4,7 +4,7 @@ from torchvision.transforms import v2
 import cv2
 
 from .base_classification import ClassificationDataModule
-from ...dataset.classification.cifar import CIFAR10TV
+from torch_extend.dataset.classification.cifar import CIFAR10TV
 
 ###### Main Class ######
 class CIFAR10DataModule(ClassificationDataModule):
@@ -57,8 +57,8 @@ class CIFAR10DataModule(ClassificationDataModule):
             A.Rotate(limit=10, interpolation=cv2.INTER_NEAREST),
             A.Affine(rotate=0, shear=10, scale=(0.8,1.2)),
             A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-            A.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-            ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
+            A.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),  # Normalization to [-1, 1]
+            ToTensorV2()  # Convert from numpy.ndarray to torch.Tensor
         ])
     
     @property
@@ -67,5 +67,5 @@ class CIFAR10DataModule(ClassificationDataModule):
         return A.Compose([
             A.Resize(32,32),
             A.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-            ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
+            ToTensorV2()
         ])

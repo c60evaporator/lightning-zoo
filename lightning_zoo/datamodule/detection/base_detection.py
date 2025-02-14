@@ -8,7 +8,7 @@ import os
 from abc import abstractmethod
 
 from ..base import TorchVisionDataModule
-from lightning_zoo.display.detection import show_bounding_boxes
+from torch_extend.display.detection import show_bounding_boxes
 
 ###### Annotation Validation TypeDicts for Object Detection ######
 class DetImageValidationResult(TypedDict):

@@ -10,12 +10,12 @@ import torch
 
 # General Parameters
 EPOCHS = 40
-BATCH_SIZE = 128
+BATCH_SIZE = 128  # Bigger batch size is faster but less accurate (https://wandb.ai/ayush-thakur/dl-question-bank/reports/What-s-the-Optimal-Batch-Size-to-Train-a-Neural-Network---VmlldzoyMDkyNDU)
 NUM_WORKERS = 4
 DATA_ROOT = './datasets/CIFAR10'
 # Optimizer Parameters
 OPT_NAME = 'sgd'
-LR = 0.05
+LR = 0.03
 WEIGHT_DECAY = 0
 MOMENTUM = 0  # For SGD and RMSprop
 RMSPROP_ALPHA = 0.99  # For RMSprop
@@ -59,14 +59,14 @@ train_transform = A.Compose([
     A.Rotate(limit=5, interpolation=cv2.INTER_NEAREST),
     A.Affine(rotate=0, shear=10, scale=(0.9,1.1)),
     A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-    A.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-    ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
+    A.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),  # Normalization from uint8 [0, 255] to float32 [-1.0, 1.0]
+    ToTensorV2()  # Convert from numpy.ndarray to torch.Tensor
 ])
 # Transforms for validation and test (https://www.kaggle.com/code/zlanan/cifar10-high-accuracy-model-build-on-pytorch)
 eval_transform = A.Compose([
     A.Resize(32,32),
-    A.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-    ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
+    A.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),  # Normalization from uint8 [0, 255] to float32 [-1.0, 1.0]
+    ToTensorV2()  # Convert from numpy.ndarray to torch.Tensor
 ])
 
 # Datamodule
@@ -165,7 +165,9 @@ trainer.fit(model, datamodule=datamodule)
 
 # Show the training results
 model.plot_train_history()
-plt.show()
+
+# %% Show the predictions with ground truths
+model.plot_prediction_from_val_dataset()
 
 # %% Test
 trainer.test(model, datamodule=datamodule)

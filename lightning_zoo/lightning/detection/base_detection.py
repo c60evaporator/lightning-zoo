@@ -3,8 +3,8 @@ from abc import abstractmethod
 import numpy as np
 
 from ..base import TorchVisionModule
-from ...metrics.detection import average_precisions
-from ...display.detection import show_average_precisions
+from torch_extend.metrics.detection import average_precisions
+from torch_extend.display.detection import show_predicted_bboxes, show_average_precisions
 
 class DetectionModule(TorchVisionModule):
     def __init__(self, class_to_idx: dict[str, int],
@@ -27,6 +27,9 @@ class DetectionModule(TorchVisionModule):
             if i not in class_to_idx.values():
                 na_cnt += 1
                 self.idx_to_class[i] = f'NA{"{:02}".format(na_cnt)}'
+        # Index to class dict with background
+        self.idx_to_class_bg = {k: v for k, v in self.idx_to_class.items()}
+        self.idx_to_class_bg[-1] = 'background'
         # Thresholds for AP validation
         self.ap_iou_threshold = ap_iou_threshold
         self.ap_conf_threshold = ap_conf_threshold
@@ -66,7 +69,7 @@ class DetectionModule(TorchVisionModule):
         """Calculate the metrics from the targets and predictions"""
         # Calculate the mean Average Precision
         aps = average_precisions(preds, targets,
-                                 self.idx_to_class, 
+                                 self.idx_to_class_bg, 
                                  iou_threshold=self.ap_iou_threshold, conf_threshold=self.ap_conf_threshold)
         mean_average_precision = np.mean([v['average_precision'] for v in aps.values()])
         self.aps = aps
@@ -74,6 +77,10 @@ class DetectionModule(TorchVisionModule):
         return {'mAP': mean_average_precision}
     
     ##### Display ######
+    def _plot_predictions(self, images, preds, targets):
+        """Plot the images with predictions and ground truths"""
+        show_predicted_bboxes(images, preds, targets, self.idx_to_class_bg)
+    
     def plot_average_precisions(self):
         """Plot the average precisions"""
         show_average_precisions(self.aps)

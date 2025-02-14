@@ -331,7 +331,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
         
     ##### Display ######
     def plot_train_history(self):
-        """Plot the training history"""
+        """Plot the training history TODO: Will be moved to Trainer"""
         # Create a figure and axes
         n_metrics = len(self.val_metrics_all[0])
         fig, axes = plt.subplots(n_metrics+1, 1, figsize=(5, 4*(n_metrics+1)))
@@ -357,22 +357,34 @@ class TorchVisionModule(pl.LightningModule, ABC):
         plt.show()
 
     @abstractmethod
-    def _plot_predictions(self, images, preds):
+    def _plot_predictions(self, images, preds, targets):
         """Plot the images with predictions"""
         raise NotImplementedError
 
     def plot_prediction_from_val_dataset(self):
-        """Plot the predictions in the first minibatch of the validation dataset"""
+        """Plot the predictions in the first minibatch of the validation dataset TODO: Will be moved to Trainer"""
         # Get the first minibatch
         inputs, targets = next(iter(self.val_dataloader()))
         # Predict
         self.model.eval()
         with torch.no_grad():
+            # Predict
             outputs = self.model(inputs)
-        # Display the images
+            # Denormalize the images
+            images = inputs
+            for tr in self.val_dataloader().dataset.transform:
+                if isinstance(tr, v2.Normalize) or isinstance(tr, A.Normalize):
+                    reverse_transform = v2.Compose([
+                        v2.Normalize(mean=[-mean/std for mean, std in zip(tr.mean, tr.std)],
+                                            std=[1/std for std in tr.std])
+                    ])
+                    images = reverse_transform(inputs)
+                    continue
+            # Display the images
+            self._plot_predictions(images, outputs, targets)
 
     def plot_prediction_from_image(self, image_path):
-        """Plot the predictions from an image"""
+        """Plot the predictions from an image TODO: Will be moved to Trainer"""
         # Load the image
         image = Image.open(image_path)
         # Preprocess the image using the same transform as the validation dataset

@@ -16,7 +16,7 @@ DATA_ROOT = './datasets/CIFAR10'
 PRETRAINED = True
 # Optimizer Parameters
 OPT_NAME = 'sgd'
-LR = 0.05
+LR = 0.01
 WEIGHT_DECAY = 0
 MOMENTUM = 0  # For SGD and RMSprop
 RMSPROP_ALPHA = 0.99  # For RMSprop
@@ -30,6 +30,7 @@ LR_STEPS = [16, 24]  # For MultiStepLR
 LR_T_MAX = EPOCHS  # For CosineAnnealingLR
 LR_PATIENCE = 10  # For ReduceLROnPlateau
 # Model Parameters
+MODEL_WEIGHT = 'vgg11'
 DROPOUT = 0.5
 
 # Select the device
@@ -63,14 +64,14 @@ train_transform = A.Compose([
     A.Rotate(limit=5, interpolation=cv2.INTER_NEAREST),
     A.Affine(rotate=0, shear=10, scale=(0.9,1.1)),
     A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-    A.Normalize(IMAGENET_MEAN, IMAGENET_STD),
-    ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
+    A.Normalize(IMAGENET_MEAN, IMAGENET_STD),  # ImageNet Normalization
+    ToTensorV2()  # Convert from numpy.ndarray to torch.Tensor
 ])
 # Transforms for validation and test (https://www.kaggle.com/code/zlanan/cifar10-high-accuracy-model-build-on-pytorch)
 eval_transform = A.Compose([
     A.Resize(32,32),
     A.Normalize(IMAGENET_MEAN, IMAGENET_STD),
-    ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
+    ToTensorV2()
 ])
 
 # Datamodule
@@ -92,7 +93,7 @@ model = VGGModule(class_to_idx=datamodule.class_to_idx, pretrained=PRETRAINED,
                   rmsprop_alpha=RMSPROP_ALPHA, adam_betas=ADAM_BETAS, eps=EPS,
                   lr_scheduler=LR_SCHEDULER, lr_gamma=LR_GAMMA, 
                   lr_step_size=LR_STEP_SIZE, lr_steps=LR_STEPS, lr_T_max=LR_T_MAX, lr_patience=LR_PATIENCE,
-                  dropout=DROPOUT)
+                  model_weight=MODEL_WEIGHT, dropout=DROPOUT)
 
 # %% Training
 ###### 4. Training (Trainer) ######
@@ -110,6 +111,9 @@ trainer.fit(model, datamodule=datamodule)
 # Show the training results
 model.plot_train_history()
 plt.show()
+
+# %% Show the predictions with ground truths
+model.plot_prediction_from_val_dataset()
 
 # %% Test
 trainer.test(model, datamodule=datamodule)

@@ -91,17 +91,16 @@ class CocoDetectionDataModule(DetectionDataModule):
         """Default transforms for preprocessing"""
         return A.Compose([
             A.Resize(640, 640),  # Resize the image to (640, 640)
-            A.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),  # Normalization (mean and std of the ImageNet dataset for normalizing)
-            ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
+            A.Normalize((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),  # Normalization from uint8 [0, 255] to float32 [0.0, 1.0]
+            ToTensorV2()  # Convert from numpy.ndarray to torch.Tensor
         ], bbox_params=A.BboxParams(format='coco'))
     
     @property
     def default_eval_transforms(self) -> v2.Compose | A.Compose:
         """Default transforms for preprocessing"""
         return A.Compose([
-            A.Resize(640, 640),  # Resize the image to (640, 640)
-            A.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),  # Normalization (mean and std of the ImageNet dataset for normalizing)
-            ToTensorV2()  # Convert from range [0, 255] to a torch.FloatTensor in the range [0.0, 1.0]
+            A.Normalize((0.485, 0.456, 0.406), (1.0, 1.0, 1.0)),
+            ToTensorV2()
         ], bbox_params=A.BboxParams(format='coco'))
     
     ###### Other Methods ######

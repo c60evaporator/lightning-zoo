@@ -10,7 +10,7 @@ class FasterRCNNModule(DetectionModule):
                  lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
                  first_epoch_lr_scheduled=False, n_batches=None,
                  ap_iou_threshold=0.5, ap_conf_threshold=0.0,
-                 model_weight='fasterrcnn_resnet50_fpn_v2'):
+                 model_weight='fasterrcnn_resnet50_fpn'):
         super().__init__(class_to_idx,
                          'fasterrcnn',
                          criterion, pretrained, tuned_layers,

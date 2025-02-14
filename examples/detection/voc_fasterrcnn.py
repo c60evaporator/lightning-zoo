@@ -8,15 +8,15 @@ sys.path.append(ROOT)
 import torch
 
 # General Parameters
-EPOCHS = 1
-BATCH_SIZE = 4  # Bigger batch size increase the training time in Object Detection. Very mall batch size (E.g., n=1, 2) results in unstable training and bad for Batch Normalization.
+EPOCHS = 4
+BATCH_SIZE = 4  # Bigger batch size increase the training time in Object Detection. Very mall batch size (E.g., n=1, 2) results in bad accuracy and poor Batch Normalization.
 NUM_WORKERS = 2  # 2 * Number of devices (GPUs) is appropriate in general, but this number doesn't matter in Object Detection.
-DATA_ROOT = './datasets/COCO'
+DATA_ROOT = './datasets/VOC2012'
 # Optimizer Parameters
 OPT_NAME = 'sgd'
-LR = 0.01
-WEIGHT_DECAY = 0
-MOMENTUM = 0  # For SGD and RMSprop
+LR = 0.005
+WEIGHT_DECAY = 0.0005
+MOMENTUM = 0.9  # For SGD and RMSprop
 RMSPROP_ALPHA = 0.99  # For RMSprop
 EPS = 1e-8  # For RMSprop, Adam, and AdamW
 ADAM_BETAS = (0.9, 0.999)  # For Adam and AdamW
@@ -49,33 +49,31 @@ NUM_GPU = 1
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-from lightning_zoo.datamodule.detection.coco import CocoDetectionDataModule
+from lightning_zoo.datamodule.detection.voc import VOCDetectionDataModule
 
 # Preprocessing
 NORM_MEAN = [0.0, 0.0, 0.0]
 NORM_STD = [1.0, 1.0, 1.0]
 # Transforms for training
 train_transform = A.Compose([
-    A.Resize(640, 640),  # Resize the image to (640, 640)
     A.Normalize(NORM_MEAN, NORM_STD),  # Normalization from uint8 [0, 255] to float32 [0.0, 1.0]
     ToTensorV2()  # Convert from numpy.ndarray to torch.Tensor
-], bbox_params=A.BboxParams(format='coco', label_fields=['class_labels']))
+], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
 # Transforms for validation and test
 eval_transform = A.Compose([
     A.Normalize(NORM_MEAN, NORM_STD),  # Normalization from uint8 [0, 255] to float32 [0.0, 1.0]
     ToTensorV2()  # Convert from numpy.ndarray to torch.Tensor
-], bbox_params=A.BboxParams(format='coco', label_fields=['class_labels']))
+], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
 
 # Datamodule
-datamodule = CocoDetectionDataModule(batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, root=DATA_ROOT,
-                                     train_annFile='./ann_validation/COCO/filtered_ann/instances_train_filtered.json',
-                                     val_annFile='./ann_validation/COCO/filtered_ann/instances_val_filtered.json',
-                                     dataset_name='COCO',
-                                     train_transforms=train_transform, eval_transforms=eval_transform)
+datamodule = VOCDetectionDataModule(batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, root=DATA_ROOT,
+                                    dataset_name='VOC2012',
+                                    train_transforms=train_transform, eval_transforms=eval_transform)
+datamodule.prepare_data()
 datamodule.setup()
 
 # Validate the dataset
-datamodule.validate_dataset(output_normal_annotation=True, ignore_transforms=False)
+#datamodule.validate_dataset(output_normal_annotation=True, ignore_transforms=False)
 
 # Display the first minibatch
 datamodule.show_first_minibatch(image_set='train')
@@ -83,7 +81,7 @@ datamodule.show_first_minibatch(image_set='train')
 # %% Create PyTorch Lightning module
 from lightning_zoo.lightning.detection.faster_rcnn import FasterRCNNModule
 
-model = FasterRCNNModule(class_to_idx=datamodule.class_to_idx,
+model = FasterRCNNModule(class_to_idx=datamodule.class_to_idx, 
                          opt_name=OPT_NAME, lr=LR, momentum=MOMENTUM, weight_decay=WEIGHT_DECAY,
                          rmsprop_alpha=RMSPROP_ALPHA, adam_betas=ADAM_BETAS, eps=EPS,
                          lr_scheduler=LR_SCHEDULER, lr_gamma=LR_GAMMA, 

@@ -1,6 +1,3 @@
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-from torchvision.transforms import v2
 import json
 import os
 
@@ -84,24 +81,6 @@ class CocoDetectionDataModule(DetectionDataModule):
         os.makedirs(f'{result_dir}/filtered_ann', exist_ok=True)
         with open(f'{result_dir}/filtered_ann/instances_{image_set}_filtered.json', 'w') as f:
             json.dump(filtered_coco, f, indent=None)
-        
-    ###### Transform Methods ######
-    @property
-    def default_train_transforms(self) -> v2.Compose | A.Compose:
-        """Default transforms for preprocessing"""
-        return A.Compose([
-            A.Resize(640, 640),  # Resize the image to (640, 640)
-            A.Normalize((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),  # Normalization from uint8 [0, 255] to float32 [0.0, 1.0]
-            ToTensorV2()  # Convert from numpy.ndarray to torch.Tensor
-        ], bbox_params=A.BboxParams(format='coco'))
-    
-    @property
-    def default_eval_transforms(self) -> v2.Compose | A.Compose:
-        """Default transforms for preprocessing"""
-        return A.Compose([
-            A.Normalize((0.485, 0.456, 0.406), (1.0, 1.0, 1.0)),
-            ToTensorV2()
-        ], bbox_params=A.BboxParams(format='coco'))
     
     ###### Other Methods ######
     def _sample_dataset(self, dataset, image_ratio, labels):

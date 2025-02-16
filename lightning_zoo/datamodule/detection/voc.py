@@ -1,6 +1,3 @@
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-from torchvision.transforms import v2
 from torchvision.datasets.utils import download_and_extract_archive
 from torchvision.datasets.voc import DATASET_YEAR_DICT
 import shutil
@@ -65,22 +62,5 @@ class VOCDetectionDataModule(DetectionDataModule):
     def _output_filtered_annotation(self, df_img_results, result_dir, image_set):
         print('Exporting the filtered annotaion file...')
         # TODO: Implement this method
-        
-    ###### Transform Methods ######
-    @property
-    def default_train_transforms(self) -> v2.Compose | A.Compose:
-        """Default transforms for preprocessing"""
-        return A.Compose([
-            A.Normalize((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),  # Normalization from uint8 [0, 255] to float32 [0.0, 1.0]
-            ToTensorV2(),  # Convert from numpy.ndarray to torch.Tensor
-        ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
-    
-    @property
-    def default_eval_transforms(self) -> v2.Compose | A.Compose:
-        """Default transforms for preprocessing"""
-        return A.Compose([
-            A.Normalize((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
-            ToTensorV2()
-        ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
     
     ###### Other Methods ######

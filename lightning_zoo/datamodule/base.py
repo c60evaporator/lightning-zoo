@@ -2,6 +2,7 @@ from lightning.pytorch import LightningDataModule
 import albumentations as A
 from torchvision.transforms import v2
 from torch.utils.data import DataLoader
+from torch.utils.data.sampler import RandomSampler
 import matplotlib.pyplot as plt
 import pandas as pd
 import os
@@ -148,7 +149,7 @@ class TorchVisionDataModule(LightningDataModule, ABC):
         raise NotImplementedError
     
     @abstractmethod
-    def _validate_annotation(self, imgs, targets, i_baches, batch_size, anomaly_save_path, denormalize):
+    def _validate_annotation(self, imgs, targets, i_baches, batch_size, anomaly_save_path, denormalize, shuffle):
         """Validate the annotation"""
         raise NotImplementedError
     
@@ -163,7 +164,8 @@ class TorchVisionDataModule(LightningDataModule, ABC):
         target_results = []
         for i, (imgs, targets) in enumerate(dataloader):
             img_validations, target_validations = self._validate_annotation(imgs, targets, i, dataloader.batch_size, anomaly_image_path, 
-                                                                            denormalize=not ignore_transforms)
+                                                                            denormalize=not ignore_transforms,
+                                                                            shuffle=isinstance(dataloader.sampler, RandomSampler))
             img_results.extend(img_validations)
             target_results.extend(target_validations)
             if i%100 == 0:  # Show progress every 100 times

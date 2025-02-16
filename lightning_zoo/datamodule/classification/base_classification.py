@@ -1,5 +1,6 @@
 from typing import TypedDict
 import albumentations as A
+from albumentations.pytorch import ToTensorV2
 from torchvision.transforms import v2
 from torchvision.utils import save_image
 import matplotlib.pyplot as plt
@@ -93,8 +94,11 @@ class ClassificationDataModule(TorchVisionDataModule):
             # Save the image
             save_image(img, f'{result_dir}/filtered_dataset/{image_set}/{self.idx_to_class[target]}/{row["img_id"]}.png')
 
-    def _validate_annotation(self, imgs, targets, i_baches, batch_size, anomaly_save_path, denormalize):
+    def _validate_annotation(self, imgs, targets, i_baches, batch_size, anomaly_save_path, denormalize, shuffle):
         """Validate the annotation"""
+        if shuffle:
+            raise ValueError('`shuffle` should be False for validation in classification task.')
+        
         img_validations: list[ClsImageValidationResult] = []
         for i, (img, target) in enumerate(zip(imgs, targets)):
             # Image information
@@ -122,6 +126,26 @@ class ClassificationDataModule(TorchVisionDataModule):
         return img_validations, []
 
     ###### Transform Methods ######
+    @property
+    def default_train_transforms(self) -> v2.Compose | A.Compose:
+        """Default transforms for preprocessing"""
+        # Based on TorchVision default transforms (https://github.com/pytorch/vision/blob/main/torchvision/transforms/_presets.py#L38)
+        return A.Compose([
+            A.Resize(256, 256),
+            A.CenterCrop(224, 224),
+            A.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),  # Normalization from uint8 [0, 255] to float32 [0.0, 1.0]
+            ToTensorV2(),  # Convert from numpy.ndarray to torch.Tensor
+        ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
+    
+    @property
+    def default_eval_transforms(self) -> v2.Compose | A.Compose:
+        """Default transforms for preprocessing"""
+        return A.Compose([
+            A.Resize(256, 256),
+            A.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+            ToTensorV2()
+        ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
+    
     @property
     def default_train_transforms(self) -> v2.Compose | A.Compose:
         """Default transforms for preprocessing"""

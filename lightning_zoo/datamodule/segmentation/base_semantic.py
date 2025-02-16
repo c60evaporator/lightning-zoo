@@ -3,37 +3,35 @@ import torch
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from torchvision.transforms import v2
+import numpy as np
 import matplotlib.pyplot as plt
 import os
 from abc import abstractmethod
 
 from ..base import TorchVisionDataModule
-from torch_extend.display.detection import show_bounding_boxes
 
 ###### Annotation Validation TypeDicts for Object Detection ######
-class DetImageValidationResult(TypedDict):
+class SemanticImageValidationResult(TypedDict):
     img_id: int
     img_path: str
     img_width: int
     img_height: int
-    n_boxes: int
+    n_labels: int
     anomaly: bool
 
-class DetBoxValidationResult(TypedDict):
+class SemanticMaskValidationResult(TypedDict):
     img_id: int
     img_path: str
     label: int
     label_name: str
-    bbox: list[float]
-    box_width: float
-    box_height: float
+    area: int
+    center_x: float
+    center_y: float
     anomaly: bool
-    anomaly_box_width: bool
-    anomaly_box_height: bool
     anomaly_label_idx: bool
 
 ###### Main Class ######
-class DetectionDataModule(TorchVisionDataModule):
+class SemanticDataModule(TorchVisionDataModule):
     def __init__(self, batch_size, num_workers,
                  dataset_name,
                  train_transforms=None, train_transform=None, train_target_transform=None,
@@ -72,10 +70,7 @@ class DetectionDataModule(TorchVisionDataModule):
         if denormalize:  # Denormalize if normalization is included in transforms
             img = self._denormalize_image(img, image_set=image_set)
         img = (img*255).to(torch.uint8)  # Change from float[0, 1] to uint[0, 255]
-        boxes, labels = target['boxes'], target['labels']
-        show_bounding_boxes(img, boxes, labels=labels,
-                            idx_to_class=self.idx_to_class,
-                            anomaly_indices=anomaly_indices, ax=ax)
+        # TODO: Implement the visualization of the semantic segmentation target
 
     ###### Validation methods ######
     @abstractmethod
@@ -85,42 +80,49 @@ class DetectionDataModule(TorchVisionDataModule):
 
     def _validate_annotation(self, imgs, targets, i_baches, batch_size, anomaly_save_path, denormalize, shuffle):
         """Validate the annotation"""
-        img_validations: list[DetImageValidationResult] = []
-        box_validations: list[DetBoxValidationResult]  = []
-        for img, target in zip(imgs, targets):
+        if shuffle:
+            raise ValueError('`shuffle` should be False for validation in semantic segmentation task.')
+        
+        img_validations: list[SemanticImageValidationResult] = []
+        mask_validations: list[SemanticMaskValidationResult]  = []
+        for i, (img, target) in enumerate(zip(imgs, targets)):
             # Image information
-            img_result: DetImageValidationResult = {}
-            image_id = int(os.path.splitext(os.path.basename(target['image_path']))[0])
+            img_result: SemanticImageValidationResult = {}
+            image_path, mask_path = self.train_dataset.get_image_target_path(i_baches*batch_size + i)
+            image_id = int(os.path.splitext(os.path.basename(image_path))[0])
             img_result['image_id'] = image_id
-            img_result['image_path'] = target['image_path']
+            img_result['image_path'] = image_path
             img_result['image_width'] = img.size()[-1]
             img_result['image_height'] = img.size()[-2]
-            img_result['n_boxes'] = len(target['boxes'])
+            mask_labels = target.unique(sorted=True)  # Extract mask label list
+            img_result['n_masks'] = len(mask_labels)
             img_result['anomaly'] = False
             anomaly_indices = []
             # Bounding box (target) validation
-            for i_box, (box, label) in enumerate(zip(target['boxes'], target['labels'])):
-                box_list = box.tolist()
-                box_result: DetBoxValidationResult = {}
-                box_result['image_id'] = image_id
-                box_result['image_path'] = target['image_path']
-                box_result['label'] = label.item()
-                box_result['label_name'] = str(box_result['label']) if self.idx_to_class is None else self.idx_to_class[box_result['label']]
-                box_result['bbox'] = box_list
-                box_result['box_width'] = box_list[2] - box_list[0]
-                box_result['box_height'] = box_list[3] - box_list[1]
-                # Negative box width
-                box_result['anomaly_box_width'] = box_result['box_width'] <= 0
-                # Negative box width
-                box_result['anomaly_box_height'] = box_result['box_height'] <= 0
+            for i_label, label in enumerate(mask_labels):
+                mask_result: SemanticMaskValidationResult = {}
+                mask_result['image_id'] = image_id
+                mask_result['image_path'] = image_path
+                mask_result['label'] = label.item()
+                mask_result['label_name'] = str(mask_result['label']) if self.idx_to_class is None else self.idx_to_class[mask_result['label']]
+                # Extract mask of the label
+                mask = target == label
+                x = torch.range(mask.size()[-1])
+                hist_x = mask.sum(dim=0)
+                y = torch.range(mask.size()[-2])
+                hist_y = mask.sum(dim=1)
+                area = mask.sum().item()
+                mask_result['area'] = area
+                mask_result['center_x'] = (hist_x * x).sum().item() / area
+                mask_result['center_y'] = (hist_y * y).sum().item() / area
                 # Label index validation
-                box_result['anomaly_label_idx'] = box_result['label'] not in self.idx_to_class.keys()
+                mask_result['anomaly_label_idx'] = mask_result['label'] not in self.idx_to_class.keys()
                 # Final anomaly judgement
-                box_result['anomaly'] = box_result['anomaly_box_width'] or box_result['anomaly_box_height'] or box_result['anomaly_label_idx']
-                if box_result['anomaly']:
+                mask_result['anomaly'] = mask_result['anomaly_label_idx']
+                if mask_result['anomaly']:
                     img_result['anomaly'] = True
-                    anomaly_indices.append(i_box)
-                box_validations.append(box_result)
+                    anomaly_indices.append(i_label)
+                mask_validations.append(mask_result)
             # Save the anomaly image
             if img_result['anomaly']:
                 fig, ax = plt.subplots(1, 1, figsize=(6, 6))
@@ -128,15 +130,16 @@ class DetectionDataModule(TorchVisionDataModule):
                 fig.savefig(f'{anomaly_save_path}/{os.path.basename(target["image_path"])}')
                 plt.show()
             img_validations.append(img_result)
-        return img_validations, box_validations
+        return img_validations, mask_validations
     
     ###### Transform Methods ######
     @property
     def default_train_transforms(self) -> v2.Compose | A.Compose:
         """Default transforms for preprocessing"""
-        # Based on TorchVision default transforms (https://github.com/pytorch/vision/blob/main/torchvision/transforms/_presets.py#L22)
+        # Based on TorchVision default transforms (https://github.com/pytorch/vision/blob/main/torchvision/transforms/_presets.py#L146)
         return A.Compose([
-            A.Normalize((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),  # Normalization from uint8 [0, 255] to float32 [0.0, 1.0]
+            A.Resize(520, 520),
+            A.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),  # Normalization from uint8 [0, 255] to float32 [0.0, 1.0]
             ToTensorV2(),  # Convert from numpy.ndarray to torch.Tensor
         ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
     
@@ -144,7 +147,8 @@ class DetectionDataModule(TorchVisionDataModule):
     def default_eval_transforms(self) -> v2.Compose | A.Compose:
         """Default transforms for preprocessing"""
         return A.Compose([
-            A.Normalize((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
+            A.Resize(520, 520),
+            A.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
 

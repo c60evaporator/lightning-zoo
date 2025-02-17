@@ -183,12 +183,17 @@ class TorchVisionModule(pl.LightningModule, ABC):
     
     ###### Validation ######
     @abstractmethod
-    def _calc_val_loss(self, batch):
+    def _val_predict(self, batch):
+        """Predict the validation batch"""
+        raise NotImplementedError
+    
+    @abstractmethod
+    def _calc_val_loss(self, preds, targets):
         """Calculate the validation loss from the batch"""
         raise NotImplementedError
     
     @abstractmethod
-    def _get_preds_cpu(self, inputs):
+    def _get_preds_cpu(self, preds):
         """Get the predictions and store them to CPU as a list"""
         raise NotImplementedError
 
@@ -199,15 +204,17 @@ class TorchVisionModule(pl.LightningModule, ABC):
 
     def validation_step(self, batch, batch_idx):
         """Validation step (E.g., calculate the loss and store the predictions and targets)"""
+        # Predict
+        preds, targets = self._val_predict(batch)
         # Calculate the loss
-        loss = self._calc_val_loss(batch)
+        loss = self._calc_val_loss(preds, targets)
         # Record the loss
         if loss is not None:
             self.log("val_loss", loss.item(), on_epoch=True, prog_bar=True, logger=True)
             self.val_step_losses.append(loss.item())
         # Store the predictions and targets for calculating metrics
-        self.val_batch_preds.extend(self._get_preds_cpu(batch[0]))
-        self.val_batch_targets.extend(self._get_targets_cpu(batch[1]))
+        self.val_batch_preds.extend(self._get_preds_cpu(preds))
+        self.val_batch_targets.extend(self._get_targets_cpu(targets))
 
     @abstractmethod
     def _calc_epoch_metrics(self, preds, targets):
@@ -357,46 +364,65 @@ class TorchVisionModule(pl.LightningModule, ABC):
         plt.show()
 
     @abstractmethod
-    def _plot_predictions(self, images, preds, targets):
+    def _plot_predictions(self, images, preds, targets, n_images=10):
         """Plot the images with predictions"""
         raise NotImplementedError
 
-    def plot_prediction_from_val_dataset(self):
+    def plot_predictions_from_val_dataset(self, n_images=10):
         """Plot the predictions in the first minibatch of the validation dataset TODO: Will be moved to Trainer"""
         # Get the first minibatch
         inputs, targets = next(iter(self.val_dataloader()))
-        # Predict
+        torch.set_grad_enabled(False)
         self.model.eval()
-        with torch.no_grad():
-            # Predict
-            outputs = self.model(inputs)
-            # Denormalize the images
-            images = inputs
-            for tr in self.val_dataloader().dataset.transform:
-                if isinstance(tr, v2.Normalize) or isinstance(tr, A.Normalize):
-                    reverse_transform = v2.Compose([
-                        v2.Normalize(mean=[-mean/std for mean, std in zip(tr.mean, tr.std)],
-                                            std=[1/std for std in tr.std])
-                    ])
-                    images = reverse_transform(inputs)
-                    continue
-            # Display the images
-            self._plot_predictions(images, outputs, targets)
+        # Predict
+        preds = self._get_preds_cpu(inputs)
+        # Denormalize the images
+        images = inputs
+        for tr in self.val_dataloader().dataset.transform:
+            if isinstance(tr, v2.Normalize) or isinstance(tr, A.Normalize):
+                reverse_transform = v2.Compose([
+                    v2.Normalize(mean=[-mean/std for mean, std in zip(tr.mean, tr.std)],
+                                        std=[1/std for std in tr.std])
+                ])
+                images = reverse_transform(inputs)
+                continue
+        # Display the images
+        self._plot_predictions(images, preds, targets, n_images)
+        torch.set_grad_enabled(True)
+        self.model.train()
 
-    def plot_prediction_from_image(self, image_path):
+    def plot_predictions_from_image(self, image_path):
         """Plot the predictions from an image TODO: Will be moved to Trainer"""
-        # Load the image
-        image = Image.open(image_path)
-        # Preprocess the image using the same transform as the validation dataset
-        transform = self.val_dataloader().dataset.transform
-        if isinstance(transform, A.Compose):
-            image_tensor = transform(image=np.array(image))
-        elif isinstance(transform, v2.Compose):
-            image_tensor = transform(image)
-        else:
-            raise RuntimeError('The `transform` argument should be an instance of `albumentations.Compose` or `torchvision.transforms.Compose`.')
-        # Predict
+        if isinstance(image_path, str):
+            image_pathes = [image_path]
+        elif isinstance(image_path, list) or isinstance(image_path, tuple):
+            image_pathes = image_path
         self.model.eval()
-        with torch.no_grad():
+        torch.set_grad_enabled(False)
+        # Loop over the images
+        for img_path in image_pathes:
+            # Load the image
+            image = Image.open(img_path)
+            # Preprocess the image using the same transform as the validation dataset
+            transform = self.val_dataloader().dataset.transform
+            if isinstance(transform, A.Compose):
+                image_tensor = transform(image=np.array(image))
+            elif isinstance(transform, v2.Compose):
+                image_tensor = transform(image)
+            else:
+                raise RuntimeError('The `transform` argument should be an instance of `albumentations.Compose` or `torchvision.transforms.Compose`.')
+            # Predict
             outputs = self.model(image_tensor)
-        # Display the image
+            # Display the image
+
+        torch.set_grad_enabled(True)
+        self.model.train()
+
+    @abstractmethod
+    def _plot_metrics_detail(self, metric_name=None):
+        """Plot the detail of the metrics"""
+        raise NotImplementedError
+
+    def plot_metrics_detail(self, metric_name=None):
+        """Plot the detail of the metrics TODO: Will be moved to Trainer"""
+        self._plot_metrics_detail(metric_name)

@@ -1,11 +1,12 @@
 #%% Select the device
+###### 1. Select the device and hyperparameters ######
 import os
 import sys
+import torch
+
 # Add the root directory of the repository to system pathes (For debugging)
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 sys.path.append(ROOT)
-
-import torch
 
 # General Parameters
 EPOCHS = 1
@@ -27,10 +28,10 @@ LR_STEP_SIZE = 8  # For StepLR
 LR_STEPS = [16, 24]  # For MultiStepLR
 LR_T_MAX = EPOCHS  # For CosineAnnealingLR
 LR_PATIENCE = 10  # For ReduceLROnPlateau
-# Metrics Parameters
-AP_IOU_THRESHOLD = 0.5
 # Model Parameters
 MODEL_WEIGHT = 'fasterrcnn_resnet50_fpn'
+# Metrics Parameters
+AP_IOU_THRESHOLD = 0.5
 
 # Select the device
 DEVICE = 'cuda'
@@ -46,6 +47,7 @@ torch.manual_seed(42)
 NUM_GPU = 1
 
 # %% Define DataModule
+###### 2. Define the dataset (DataModule) ######
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
@@ -81,6 +83,7 @@ datamodule.validate_dataset(output_normal_annotation=True, ignore_transforms=Fal
 datamodule.show_first_minibatch(image_set='train')
 
 # %% Create PyTorch Lightning module
+###### 3. Define the model (LightningModule) ######
 from lightning_zoo.lightning.detection.faster_rcnn import FasterRCNNModule
 
 model = FasterRCNNModule(class_to_idx=datamodule.class_to_idx,
@@ -92,6 +95,7 @@ model = FasterRCNNModule(class_to_idx=datamodule.class_to_idx,
                          model_weight=MODEL_WEIGHT)
 
 # %% Training
+###### 4. Training (Trainer) ######
 from lightning import Trainer
 from lightning.pytorch.loggers import CSVLogger
 

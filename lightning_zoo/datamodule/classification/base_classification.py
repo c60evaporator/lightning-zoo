@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 
+from torch_extend.validate.common import validate_same_img_size
+
 from ..base import TorchVisionDataModule
 
 ###### Annotation Validation TypeDicts for Classification ######
@@ -49,6 +51,14 @@ class ClassificationDataModule(TorchVisionDataModule):
                 if i not in self.class_to_idx.values():
                     na_cnt += 1
                     self.idx_to_class[i] = f'NA{"{:02}".format(na_cnt)}'
+        # Same image size validation
+        if not validate_same_img_size(self.train_transform):
+            raise ValueError('The image size should be the same after the transforms for batch training. Please add `Resize` or `Crop` to `train_transform`.')
+        self.same_img_size_train = True
+        if validate_same_img_size(self.train_transform):
+            self.same_img_size_eval = True
+        else:
+            self.same_img_size_eval = False
     
     ###### Display methods ######    
     def _show_image_and_target(self, img, target, image_set='train', denormalize=True, ax=None, anomaly_indices=None):

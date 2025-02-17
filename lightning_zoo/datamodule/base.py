@@ -49,8 +49,14 @@ class TorchVisionDataModule(LightningDataModule, ABC):
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
+        # Same image size validation
+        self.same_img_size_train = None
+        self.same_img_size_eval = None
 
     ###### Dataset Methods ######
+    def collate_fn(self, batch):
+        return tuple(zip(*batch))
+    
     def _get_transform(self, image_set, ignore_transforms=False):
         if ignore_transforms:
             return v2.ToTensor()
@@ -92,26 +98,26 @@ class TorchVisionDataModule(LightningDataModule, ABC):
         """Create train dataloader"""
         return DataLoader(self.train_dataset, batch_size=self.batch_size, 
                           shuffle=True, num_workers=self.num_workers,
-                          collate_fn=self.collate_fn if 'collate_fn' in [mem[0] for mem in inspect.getmembers(self)] else None)
+                          collate_fn=None if self.same_img_size_train else self.collate_fn)
     
     def val_dataloader(self) -> list[str]:
         """Create validation dataloader"""
         return DataLoader(self.val_dataset, batch_size=self.batch_size, 
                           shuffle=False, num_workers=self.num_workers,
-                          collate_fn=self.collate_fn if 'collate_fn' in [mem[0] for mem in inspect.getmembers(self)] else None)
+                          collate_fn=None if self.same_img_size_eval else self.collate_fn)
     
     def test_dataloader(self) -> list[str]:
         """Create test dataloader"""
         return DataLoader(self.test_dataset, batch_size=self.batch_size, 
                           shuffle=False, num_workers=self.num_workers,
-                          collate_fn=self.collate_fn if 'collate_fn' in [mem[0] for mem in inspect.getmembers(self)] else None)
+                          collate_fn=None if self.same_img_size_eval else self.collate_fn)
     
     ###### Display methods ######
     def _denormalize_image(self, img, image_set='train'):
         """Denormalize the image for showing it"""
         if image_set == 'train':
             image_transform = self.train_transforms if self.train_transforms is not None else self.train_transform
-        elif image_set == 'val':
+        elif image_set == 'val' or image_set == 'test':
             image_transform = self.eval_transforms if self.eval_transforms is not None else self.eval_transform
         for tr in image_transform:
             if isinstance(tr, v2.Normalize) or isinstance(tr, A.Normalize):
@@ -192,13 +198,13 @@ class TorchVisionDataModule(LightningDataModule, ABC):
             trainset, valset, testset = self._get_datasets(ignore_transforms=ignore_transforms)
             trainloader = DataLoader(trainset, batch_size=1, 
                                      shuffle=False, num_workers=self.num_workers,
-                                     collate_fn=self.collate_fn if 'collate_fn' in [mem[0] for mem in inspect.getmembers(self)] else None)
+                                     collate_fn=self.collate_fn)
             valloader = DataLoader(valset, batch_size=1, 
                                    shuffle=False, num_workers=self.num_workers,
-                                   collate_fn=self.collate_fn if 'collate_fn' in [mem[0] for mem in inspect.getmembers(self)] else None)
+                                   collate_fn=self.collate_fn)
             testloader = DataLoader(testset, batch_size=1,
                                     shuffle=False, num_workers=self.num_workers,
-                                    collate_fn=self.collate_fn if 'collate_fn' in [mem[0] for mem in inspect.getmembers(self)] else None)
+                                    collate_fn=self.collate_fn)
         else:
             trainloader = self.train_dataloader()
             valloader = self.val_dataloader()

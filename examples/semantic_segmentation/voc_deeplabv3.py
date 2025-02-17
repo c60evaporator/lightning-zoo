@@ -9,10 +9,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 sys.path.append(ROOT)
 
 # General Parameters
-EPOCHS = 4
-BATCH_SIZE = 4  # Bigger batch size increase the training time in Object Detection. Very mall batch size (E.g., n=1, 2) results in bad accuracy and poor Batch Normalization.
+EPOCHS = 10
+BATCH_SIZE = 32
 NUM_WORKERS = 2  # 2 * Number of devices (GPUs) is appropriate in general, but this number doesn't matter in Object Detection.
-DATA_ROOT = './datasets/VOC2012'
+DATA_ROOT = '../detection/datasets/VOC2012'
 # Optimizer Parameters
 OPT_NAME = 'sgd'
 LR = 0.005
@@ -29,9 +29,11 @@ LR_STEPS = [16, 24]  # For MultiStepLR
 LR_T_MAX = EPOCHS  # For CosineAnnealingLR
 LR_PATIENCE = 10  # For ReduceLROnPlateau
 # Model Parameters
-MODEL_WEIGHT = 'fasterrcnn_resnet50_fpn'
-# Metrics Parameters
-AP_IOU_THRESHOLD = 0.5
+MODEL_WEIGHT = 'deeplabv3_resnet50'
+
+# Annotation Information
+BORDER_IDX = 21 # Border index (None: No border, 21: VOC2012)
+BG_IDX = 0
 
 # Select the device
 DEVICE = 'cuda'
@@ -51,26 +53,29 @@ NUM_GPU = 1
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-from lightning_zoo.datamodule.detection.voc import VOCDetectionDataModule
+from lightning_zoo.datamodule.semantic_segmentation.voc import VOCSemanticSegDataModule
 
-# Preprocessing
-NORM_MEAN = [0.0, 0.0, 0.0]
-NORM_STD = [1.0, 1.0, 1.0]
+# ImageNet Normalization parameters
+IMAGENET_MEAN = [0.485, 0.456, 0.406]
+IMAGENET_STD = [0.229, 0.224, 0.225]
 # Transforms for training
 train_transform = A.Compose([
-    A.Normalize(NORM_MEAN, NORM_STD),  # Normalization from uint8 [0, 255] to float32 [0.0, 1.0]
-    ToTensorV2()  # Convert from numpy.ndarray to torch.Tensor
-], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
+    A.Resize(520, 520),
+    A.Normalize(IMAGENET_MEAN, IMAGENET_STD),  # ImageNet Normalization
+    ToTensorV2(),  # Convert from numpy.ndarray to torch.Tensor
+])
 # Transforms for validation and test
 eval_transform = A.Compose([
-    A.Normalize(NORM_MEAN, NORM_STD),  # Normalization from uint8 [0, 255] to float32 [0.0, 1.0]
+    A.Resize(520, 520),
+    A.Normalize(IMAGENET_MEAN, IMAGENET_STD),  # ImageNet Normalization
     ToTensorV2()  # Convert from numpy.ndarray to torch.Tensor
-], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
+])
 
 # Datamodule
-datamodule = VOCDetectionDataModule(batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, root=DATA_ROOT,
-                                    dataset_name='VOC2012Detection',
-                                    train_transforms=train_transform, eval_transforms=eval_transform)
+datamodule = VOCSemanticSegDataModule(batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, root=DATA_ROOT,
+                                      dataset_name='VOC2012SemanticSeg',
+                                      train_transforms=train_transform, eval_transforms=eval_transform,
+                                      border_idx=BORDER_IDX, bg_idx=BG_IDX)
 datamodule.prepare_data()
 datamodule.setup()
 
@@ -82,15 +87,14 @@ datamodule.show_first_minibatch(image_set='train')
 
 # %% Create PyTorch Lightning module
 ###### 3. Define the model (LightningModule) ######
-from lightning_zoo.lightning.detection.faster_rcnn import FasterRCNNModule
+from lightning_zoo.lightning.semantic_segmentation.deeplabv3 import DeepLabV3Module
 
-model = FasterRCNNModule(class_to_idx=datamodule.class_to_idx, 
-                         opt_name=OPT_NAME, lr=LR, momentum=MOMENTUM, weight_decay=WEIGHT_DECAY,
-                         rmsprop_alpha=RMSPROP_ALPHA, adam_betas=ADAM_BETAS, eps=EPS,
-                         lr_scheduler=LR_SCHEDULER, lr_gamma=LR_GAMMA, 
-                         lr_step_size=LR_STEP_SIZE, lr_steps=LR_STEPS, lr_T_max=LR_T_MAX, lr_patience=LR_PATIENCE,
-                         ap_iou_threshold=AP_IOU_THRESHOLD,
-                         model_weight=MODEL_WEIGHT)
+model = DeepLabV3Module(class_to_idx=datamodule.class_to_idx, border_idx=datamodule.border_idx,
+                        opt_name=OPT_NAME, lr=LR, momentum=MOMENTUM, weight_decay=WEIGHT_DECAY,
+                        rmsprop_alpha=RMSPROP_ALPHA, adam_betas=ADAM_BETAS, eps=EPS,
+                        lr_scheduler=LR_SCHEDULER, lr_gamma=LR_GAMMA, 
+                        lr_step_size=LR_STEP_SIZE, lr_steps=LR_STEPS, lr_T_max=LR_T_MAX, lr_patience=LR_PATIENCE,
+                        model_weight=MODEL_WEIGHT)
 
 # %% Training
 ###### 4. Training (Trainer) ######

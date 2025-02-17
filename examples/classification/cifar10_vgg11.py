@@ -2,11 +2,11 @@
 ###### 1. Select the device and hyperparameters ######
 import os
 import sys
-# Add the root directory of the repository to system pathes
+import torch
+
+# Add the root directory of the repository to system pathes (For debugging)
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 sys.path.append(ROOT)
-
-import torch
 
 # General Parameters
 EPOCHS = 30

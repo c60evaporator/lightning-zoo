@@ -8,10 +8,13 @@ import matplotlib.pyplot as plt
 import os
 from abc import abstractmethod
 
+from torch_extend.display.semantic_segmentation import show_segmentations
+from torch_extend.validate.common import validate_same_img_size
+
 from ..base import TorchVisionDataModule
 
-###### Annotation Validation TypeDicts for Object Detection ######
-class SemanticImageValidationResult(TypedDict):
+###### Annotation Validation TypeDicts for Semantic Segmentation ######
+class SemanticSegImageValidationResult(TypedDict):
     img_id: int
     img_path: str
     img_width: int
@@ -19,7 +22,7 @@ class SemanticImageValidationResult(TypedDict):
     n_labels: int
     anomaly: bool
 
-class SemanticMaskValidationResult(TypedDict):
+class SemanticSegMaskValidationResult(TypedDict):
     img_id: int
     img_path: str
     label: int
@@ -31,21 +34,21 @@ class SemanticMaskValidationResult(TypedDict):
     anomaly_label_idx: bool
 
 ###### Main Class ######
-class SemanticDataModule(TorchVisionDataModule):
+class SemanticSegDataModule(TorchVisionDataModule):
     def __init__(self, batch_size, num_workers,
                  dataset_name,
                  train_transforms=None, train_transform=None, train_target_transform=None,
-                 eval_transforms=None, eval_transform=None, eval_target_transform=None):
-        super().__init__(batch_size, num_workers, dataset_name, 
+                 eval_transforms=None, eval_transform=None, eval_target_transform=None,
+                 border_idx=None, bg_idx=0):
+        super().__init__(batch_size, num_workers, dataset_name,
                          train_transforms, train_transform, train_target_transform,
                          eval_transforms, eval_transform, eval_target_transform)
         self.class_to_idx = None
         self.idx_to_class = None
+        self.border_idx = border_idx
+        self.bg_idx = bg_idx
     
-    ###### Dataset Methods ######
-    def collate_fn(self, batch):
-        return tuple(zip(*batch))
-    
+    ###### Dataset Methods ######    
     def _setup(self):
         self.train_dataset, self.val_dataset, self.test_dataset = self._get_datasets()
         # Class to index dict
@@ -63,6 +66,14 @@ class SemanticDataModule(TorchVisionDataModule):
                 if i not in self.class_to_idx.values():
                     na_cnt += 1
                     self.idx_to_class[i] = f'NA{"{:02}".format(na_cnt)}'
+        # Same image size validation
+        if not validate_same_img_size(self.train_transforms) and not validate_same_img_size(self.train_transform):
+            raise ValueError('The image size should be the same after the transforms for batch training. Please add `Resize` or `Crop` to `train_transforms` or `train_transform`.')
+        self.same_img_size_train = True
+        if validate_same_img_size(self.train_transform) or validate_same_img_size(self.train_transforms):
+            self.same_img_size_eval = True
+        else:
+            self.same_img_size_eval = False
     
     ###### Display methods ######
     def _show_image_and_target(self, img, target, image_set='train', denormalize=True, ax=None, anomaly_indices=None):
@@ -70,7 +81,8 @@ class SemanticDataModule(TorchVisionDataModule):
         if denormalize:  # Denormalize if normalization is included in transforms
             img = self._denormalize_image(img, image_set=image_set)
         img = (img*255).to(torch.uint8)  # Change from float[0, 1] to uint[0, 255]
-        # TODO: Implement the visualization of the semantic segmentation target
+        # Show the image with the target mask
+        show_segmentations(img, target, self.idx_to_class, bg_idx=self.bg_idx, border_idx=self.border_idx)
 
     ###### Validation methods ######
     @abstractmethod
@@ -83,11 +95,11 @@ class SemanticDataModule(TorchVisionDataModule):
         if shuffle:
             raise ValueError('`shuffle` should be False for validation in semantic segmentation task.')
         
-        img_validations: list[SemanticImageValidationResult] = []
-        mask_validations: list[SemanticMaskValidationResult]  = []
+        img_validations: list[SemanticSegImageValidationResult] = []
+        mask_validations: list[SemanticSegMaskValidationResult]  = []
         for i, (img, target) in enumerate(zip(imgs, targets)):
             # Image information
-            img_result: SemanticImageValidationResult = {}
+            img_result: SemanticSegImageValidationResult = {}
             image_path, mask_path = self.train_dataset.get_image_target_path(i_baches*batch_size + i)
             image_id = int(os.path.splitext(os.path.basename(image_path))[0])
             img_result['image_id'] = image_id
@@ -100,7 +112,7 @@ class SemanticDataModule(TorchVisionDataModule):
             anomaly_indices = []
             # Bounding box (target) validation
             for i_label, label in enumerate(mask_labels):
-                mask_result: SemanticMaskValidationResult = {}
+                mask_result: SemanticSegMaskValidationResult = {}
                 mask_result['image_id'] = image_id
                 mask_result['image_path'] = image_path
                 mask_result['label'] = label.item()
@@ -138,10 +150,10 @@ class SemanticDataModule(TorchVisionDataModule):
         """Default transforms for preprocessing"""
         # Based on TorchVision default transforms (https://github.com/pytorch/vision/blob/main/torchvision/transforms/_presets.py#L146)
         return A.Compose([
-            A.Resize(520, 520),
-            A.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),  # Normalization from uint8 [0, 255] to float32 [0.0, 1.0]
+            A.Resize(520, 520),  # Resize the image to (520, 520)
+            A.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),  # ImageNet Normalization
             ToTensorV2(),  # Convert from numpy.ndarray to torch.Tensor
-        ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
+        ])
     
     @property
     def default_eval_transforms(self) -> v2.Compose | A.Compose:
@@ -150,7 +162,7 @@ class SemanticDataModule(TorchVisionDataModule):
             A.Resize(520, 520),
             A.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
             ToTensorV2()
-        ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
+        ])
 
     @property
     def default_train_transform(self) -> v2.Compose | A.Compose:

@@ -7,8 +7,9 @@ import matplotlib.pyplot as plt
 import os
 from abc import abstractmethod
 
-from ..base import TorchVisionDataModule
 from torch_extend.display.detection import show_bounding_boxes
+
+from ..base import TorchVisionDataModule
 
 ###### Annotation Validation TypeDicts for Object Detection ######
 class DetImageValidationResult(TypedDict):
@@ -65,6 +66,9 @@ class DetectionDataModule(TorchVisionDataModule):
                 if i not in self.class_to_idx.values():
                     na_cnt += 1
                     self.idx_to_class[i] = f'NA{"{:02}".format(na_cnt)}'
+        # Same image size validation (Always False for object detection)
+        self.same_img_size_train = False
+        self.same_img_size_eval = False
     
     ###### Display methods ######
     def _show_image_and_target(self, img, target, image_set='train', denormalize=True, ax=None, anomaly_indices=None):

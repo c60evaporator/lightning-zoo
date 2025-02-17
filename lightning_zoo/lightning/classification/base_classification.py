@@ -1,8 +1,10 @@
 import torch
 import torch.nn as nn
 from abc import abstractmethod
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 from ..base import TorchVisionModule
 
@@ -53,14 +55,29 @@ class ClassificationModule(TorchVisionModule):
         return self.criterion(outputs, targets)
     
     ###### Validation ######
-    def _calc_val_loss(self, batch):
+    def _val_predict(self, batch):
+        """Predict the validation batch"""
+        # Predict the batch
+        if isinstance(batch[0], torch.Tensor):  # Batch images of torch.Tensor
+            preds = self.model(batch[0])
+        elif isinstance(batch[0], tuple):  # Tuple of batch images by collate_fn
+            preds = torch.stack([self.model(img.unsqueeze(0)).squeeze(0)
+                                for img in batch[0]])
+        # Get the targets
+        if isinstance(batch[1], torch.Tensor):
+            targets = batch[1]
+        elif isinstance(batch[1], tuple):
+            targets = torch.tensor(batch[1], dtype=torch.long)
+        return preds, targets
+    
+    def _calc_val_loss(self, preds, targets):
         """Calculate the validation loss from the batch"""
         # Calculate losses in the same way as training.
-        return self._calc_train_loss(batch)
+        return self.criterion(preds, targets)
     
-    def _get_preds_cpu(self, inputs):
+    def _get_preds_cpu(self, preds):
         """Get the predictions and store them to CPU as a list"""
-        return [pred.cpu() for pred in self.model(inputs)]
+        return [pred.cpu() for pred in preds]
 
     def _get_targets_cpu(self, targets):
         """Get the targets and store them to CPU as a list"""
@@ -74,13 +91,14 @@ class ClassificationModule(TorchVisionModule):
         precision_macro = precision_score(targets, predicted_labels, average='macro')
         recall_macro = recall_score(targets, predicted_labels, average='macro')
         f1_macro = f1_score(targets, predicted_labels, average='macro')
+        self.confusion_matrix = confusion_matrix(targets, predicted_labels)
         return {'accuracy': accuracy,
                 'precision_macro': precision_macro,
                 'recall_macro': recall_macro,
                 'f1_macro': f1_macro}
     
     ##### Display ######
-    def _plot_predictions(self, images, preds, targets):
+    def _plot_predictions(self, images, preds, targets, n_images=10):
         """Plot the images with predictions and ground truths"""
         for i, (img, pred, target) in enumerate(zip(images, preds, targets)):
             predicted_label = torch.argmax(pred).item()
@@ -88,3 +106,27 @@ class ClassificationModule(TorchVisionModule):
             plt.imshow(img_permute)
             plt.title(f'pred: {self.idx_to_class[predicted_label]}, true: {self.idx_to_class[target.item()]}')
             plt.show()
+            if i >= n_images:
+                break
+
+    def _plot_metrics_detail(self, metric_name=None):
+        """Plot the detail of the metrics"""
+        if metric_name is None:
+            metric_name = 'confusion_matrix'
+        # Plot the IOUs of each class
+        if metric_name == 'confusion_matrix':
+            df_cm = pd.DataFrame(self.confusion_matrix, 
+                                 index=[self.idx_to_class[i] for i in range(len(self.idx_to_class))], 
+                                 columns=[self.idx_to_class[i] for i in range(len(self.idx_to_class))])
+            plt.figure(figsize=(len(self.idx_to_class), len(self.idx_to_class)*0.8))
+            sns.heatmap(df_cm, annot=True, fmt=".5g", cmap='Blues')
+            plt.xlabel('Predicted')
+            plt.ylabel('True')
+            plt.title('Confusion Matrix')
+            plt.show()
+        # Print the accuracies of each class
+        elif metric_name == 'accuracy':
+            print('Accuracy of each class')
+            class_accuracies = df_cm.values.diagonal() / df_cm.sum(axis=1).values
+            class_accuracies = sorted(class_accuracies)
+            print(pd.Series(class_accuracies, index=self.idx_to_class.values()))

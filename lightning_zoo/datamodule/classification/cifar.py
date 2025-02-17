@@ -3,8 +3,9 @@ from albumentations.pytorch import ToTensorV2
 from torchvision.transforms import v2
 import cv2
 
+from torch_extend.dataset import CIFAR10TV
+
 from .base_classification import ClassificationDataModule
-from torch_extend.dataset.classification.cifar import CIFAR10TV
 
 ###### Main Class ######
 class CIFAR10DataModule(ClassificationDataModule):

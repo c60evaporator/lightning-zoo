@@ -32,7 +32,7 @@ LR_PATIENCE = 10  # For ReduceLROnPlateau
 MODEL_WEIGHT = 'deeplabv3_resnet50'
 
 # Annotation Information
-BORDER_IDX = 21 # Border index (None: No border, 21: VOC2012)
+BORDER_IDX = 255 # Border index (None: No border, 255: VOC2012)
 BG_IDX = 0
 
 # Select the device

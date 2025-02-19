@@ -10,12 +10,12 @@ sys.path.append(ROOT)
 
 # General Parameters
 EPOCHS = 4
-BATCH_SIZE = 4  # Bigger batch size increase the training time in Object Detection. Very mall batch size (E.g., n=1, 2) results in bad accuracy and poor Batch Normalization.
+BATCH_SIZE = 4  # Effective Batch Size. Bigger batch size increase the training time in Object Detection. Very mall batch size (E.g., n=1, 2) results in bad accuracy and poor Batch Normalization.
 NUM_WORKERS = 2  # 2 * Number of devices (GPUs) is appropriate in general, but this number doesn't matter in Object Detection.
 DATA_ROOT = './datasets/VOC2012'
 # Optimizer Parameters
 OPT_NAME = 'sgd'
-LR = 0.005
+LR = 0.005  # Effective Learning Rate (https://lightning.ai/forums/t/effective-learning-rate-and-batch-size-with-lightning-in-ddp/101/2)
 WEIGHT_DECAY = 0.0005
 MOMENTUM = 0.9  # For SGD and RMSprop
 RMSPROP_ALPHA = 0.99  # For RMSprop
@@ -68,7 +68,7 @@ eval_transform = A.Compose([
 ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
 
 # Datamodule
-datamodule = VOCDetectionDataModule(batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, root=DATA_ROOT,
+datamodule = VOCDetectionDataModule(batch_size=int(BATCH_SIZE/NUM_GPU), num_workers=NUM_WORKERS, root=DATA_ROOT,
                                     dataset_name='VOC2012Detection',
                                     train_transforms=train_transform, eval_transforms=eval_transform)
 datamodule.prepare_data()
@@ -85,7 +85,7 @@ datamodule.show_first_minibatch(image_set='train')
 from lightning_zoo.lightning.detection.faster_rcnn import FasterRCNNModule
 
 model = FasterRCNNModule(class_to_idx=datamodule.class_to_idx, 
-                         opt_name=OPT_NAME, lr=LR, momentum=MOMENTUM, weight_decay=WEIGHT_DECAY,
+                         opt_name=OPT_NAME, lr=LR*NUM_GPU, momentum=MOMENTUM, weight_decay=WEIGHT_DECAY,
                          rmsprop_alpha=RMSPROP_ALPHA, adam_betas=ADAM_BETAS, eps=EPS,
                          lr_scheduler=LR_SCHEDULER, lr_gamma=LR_GAMMA, 
                          lr_step_size=LR_STEP_SIZE, lr_steps=LR_STEPS, lr_T_max=LR_T_MAX, lr_patience=LR_PATIENCE,

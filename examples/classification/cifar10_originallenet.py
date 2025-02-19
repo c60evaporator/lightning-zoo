@@ -10,12 +10,12 @@ sys.path.append(ROOT)
 
 # General Parameters
 EPOCHS = 40
-BATCH_SIZE = 128  # Bigger batch size is faster but less accurate (https://wandb.ai/ayush-thakur/dl-question-bank/reports/What-s-the-Optimal-Batch-Size-to-Train-a-Neural-Network---VmlldzoyMDkyNDU)
+BATCH_SIZE = 128  # Effective Batch Size. Bigger batch size is faster but less accurate (https://wandb.ai/ayush-thakur/dl-question-bank/reports/What-s-the-Optimal-Batch-Size-to-Train-a-Neural-Network---VmlldzoyMDkyNDU).
 NUM_WORKERS = 4
 DATA_ROOT = './datasets/CIFAR10'
 # Optimizer Parameters
 OPT_NAME = 'sgd'
-LR = 0.03
+LR = 0.03  # Effective Learning Rate (https://lightning.ai/forums/t/effective-learning-rate-and-batch-size-with-lightning-in-ddp/101/2)
 WEIGHT_DECAY = 0
 MOMENTUM = 0  # For SGD and RMSprop
 RMSPROP_ALPHA = 0.99  # For RMSprop
@@ -70,7 +70,7 @@ eval_transform = A.Compose([
 ])
 
 # Datamodule
-datamodule = CIFAR10DataModule(batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, root=DATA_ROOT,
+datamodule = CIFAR10DataModule(batch_size=int(BATCH_SIZE/NUM_GPU), num_workers=NUM_WORKERS, root=DATA_ROOT,
                                train_transform=train_transform, eval_transform=eval_transform)
 datamodule.setup()
 #datamodule.validate_dataset(output_normal_annotation=True)
@@ -144,7 +144,7 @@ class LeNetModule(ClassificationModule):
         pass
 
 model = LeNetModule(class_to_idx=datamodule.class_to_idx, 
-                    opt_name=OPT_NAME, lr=LR, momentum=MOMENTUM, weight_decay=WEIGHT_DECAY,
+                    opt_name=OPT_NAME, lr=LR*NUM_GPU, momentum=MOMENTUM, weight_decay=WEIGHT_DECAY,
                     rmsprop_alpha=RMSPROP_ALPHA, adam_betas=ADAM_BETAS, eps=EPS,
                     lr_scheduler=LR_SCHEDULER, lr_gamma=LR_GAMMA, 
                     lr_step_size=LR_STEP_SIZE, lr_steps=LR_STEPS, lr_T_max=LR_T_MAX, lr_patience=LR_PATIENCE,
@@ -167,7 +167,7 @@ trainer.fit(model, datamodule=datamodule)
 model.plot_train_history()
 
 # %% Show the predictions with ground truths
-model.plot_prediction_from_val_dataset()
+model.plot_predictions_from_val_dataset()
 
 # %% Test
 trainer.test(model, datamodule=datamodule)

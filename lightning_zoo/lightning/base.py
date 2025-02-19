@@ -127,6 +127,8 @@ class TorchVisionModule(pl.LightningModule, ABC):
         self.start_time = time.time()
         # Set the model and its parameters
         self._set_model_and_params()
+        # Number of devices
+        print('Number of devices=' + str(self.trainer.num_devices))
         
         self.i_epoch = 0
         # For training logging
@@ -162,7 +164,9 @@ class TorchVisionModule(pl.LightningModule, ABC):
         """Training"""
         loss = self._calc_train_loss(batch)
         # Record the loss
-        self.log("train_loss", loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log("train_loss", loss.item(), on_step=True, on_epoch=True, prog_bar=True, 
+                 logger=True, batch_size=len(batch[0]),
+                 sync_dist=True if self.trainer.num_devices > 1 else False)
         self.train_step_losses.append(loss.item())
         # first_epoch_lr_scheduler
         if self.first_epoch_lr_scheduler is not None:
@@ -179,7 +183,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
         self.first_epoch_lr_scheduler = None
         # LR Scheduler is automatically called by PyTorch Lightning because `interval` is "epoch" (See https://lightning.ai/docs/pytorch/stable/common/optimization.html#learning-rate-scheduling)
 
-        print(f'Epoch {self.current_epoch+1}: finished! train_loss={epoch_train_loss}, elapsed_time={time.time()-self.start_time:.2f} sec')
+        print(f'Epoch {self.current_epoch}{" device" + str(self.global_rank) if self.trainer.num_devices > 1 else ""}: finished! train_loss={epoch_train_loss}, elapsed_time={time.time()-self.start_time:.2f} sec')
     
     ###### Validation ######
     @abstractmethod
@@ -210,7 +214,9 @@ class TorchVisionModule(pl.LightningModule, ABC):
         loss = self._calc_val_loss(preds, targets)
         # Record the loss
         if loss is not None:
-            self.log("val_loss", loss.item(), on_epoch=True, prog_bar=True, logger=True)
+            self.log("val_loss", loss.item(), on_epoch=True, prog_bar=True, 
+                     logger=True, batch_size=len(batch[0]),
+                     sync_dist=True if self.trainer.num_devices > 1 else False)
             self.val_step_losses.append(loss.item())
         # Store the predictions and targets for calculating metrics
         self.val_batch_preds.extend(self._get_preds_cpu(preds))
@@ -228,17 +234,18 @@ class TorchVisionModule(pl.LightningModule, ABC):
             epoch_val_loss = sum(self.val_step_losses) / len(self.val_step_losses)
             self.val_epoch_losses.append(epoch_val_loss)
             self.val_step_losses = []
-            print(f"Epoch {self.current_epoch+1}: val_loss={epoch_val_loss}")
+            print(f'Epoch {self.current_epoch}{" device" + str(self.global_rank) if self.trainer.num_devices > 1 else ""}: val_loss={epoch_val_loss}')
         # Calculate the metrics
         metrics = self._calc_epoch_metrics(self.val_batch_preds, self.val_batch_targets)
-        print(f'Epoch {self.current_epoch+1}: ' + ' '.join([f'{k}={v}' for k, v in metrics.items()]))
+        print(f'Epoch {self.current_epoch}{" device" + str(self.global_rank) if self.trainer.num_devices > 1 else ""}: ' + ' '.join([f'{k}={v}' for k, v in metrics.items()]))
         self.val_metrics_all.append(metrics)
         # Initialize the lists for the next epoch
         self.val_batch_targets = []
         self.val_batch_preds = []
         # Record the metrics
         for metric_name, metric_value in metrics.items():
-            self.log(f"val_{metric_name}", metric_value)
+            self.log(f"val_{metric_name}", metric_value,
+                     sync_dist=True if self.trainer.num_devices > 1 else False)
 
     ###### Test ######
     def test_step(self, batch, batch_idx):
@@ -251,7 +258,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
         """Epoch end processes during the test (E.g., calculate the metrics)"""
         # Calculate the metrics
         metrics = self._calc_epoch_metrics(self.test_batch_preds, self.test_batch_targets)
-        print(f'Epoch {self.current_epoch+1}: ' + ' '.join([f'{k}={v}' for k, v in metrics.items()]))
+        print(f'Epoch {self.current_epoch} device{self.global_rank}: ' + ' '.join([f'{k}={v}' for k, v in metrics.items()]))
         self.test_epoch_metrics.append(metrics)        
         # Initialize the lists for the next epoch
         self.test_batch_targets = []

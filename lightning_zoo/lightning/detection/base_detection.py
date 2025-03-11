@@ -28,9 +28,6 @@ class DetectionModule(TorchVisionModule):
             if i not in class_to_idx.values():
                 na_cnt += 1
                 self.idx_to_class[i] = f'NA{"{:02}".format(na_cnt)}'
-        # Index to class dict with background
-        self.idx_to_class_bg = {k: v for k, v in self.idx_to_class.items()}
-        self.idx_to_class_bg[-1] = 'background'
         # Thresholds for AP validation
         self.ap_iou_threshold = ap_iou_threshold
         self.ap_conf_threshold = ap_conf_threshold
@@ -74,7 +71,7 @@ class DetectionModule(TorchVisionModule):
         """Calculate the metrics from the targets and predictions"""
         # Calculate the mean Average Precision
         aps = average_precisions(preds, targets,
-                                 self.idx_to_class_bg, 
+                                 self.idx_to_class, 
                                  iou_threshold=self.ap_iou_threshold, conf_threshold=self.ap_conf_threshold)
         mean_average_precision = np.mean([v['average_precision'] for v in aps.values()])
         self.aps = aps
@@ -83,7 +80,7 @@ class DetectionModule(TorchVisionModule):
     ##### Display ######
     def _plot_predictions(self, images, preds, targets, n_images=10):
         """Plot the images with predictions and ground truths"""
-        show_predicted_bboxes(images, preds, targets, self.idx_to_class_bg,
+        show_predicted_bboxes(images, preds, targets, self.idx_to_class,
                               max_displayed_images=n_images)
         
     def _plot_metrics_detail(self, metric_name=None):

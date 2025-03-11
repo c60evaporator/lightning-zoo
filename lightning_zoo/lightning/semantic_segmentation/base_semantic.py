@@ -29,9 +29,6 @@ class SemanticSegModule(TorchVisionModule):
             if i not in class_to_idx.values():
                 na_cnt += 1
                 self.idx_to_class[i] = f'NA{"{:02}".format(na_cnt)}'
-        # Index to class dict with background
-        self.idx_to_class_bg = {k: v for k, v in self.idx_to_class.items()}
-        self.idx_to_class_bg[-1] = 'background'
 
     ###### Set the model and the fine-tuning settings ######
     @property

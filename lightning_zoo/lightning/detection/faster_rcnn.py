@@ -46,9 +46,8 @@ class FasterRCNNModule(DetectionModule):
     def _replace_transferred_layers(self) -> None:
         """Replace layers for transfer learning"""
         # Replace the box_predictor
-        num_classes = max(self.class_to_idx.values()) + 1
         in_features = self.model.roi_heads.box_predictor.cls_score.in_features
-        self.model.roi_heads.box_predictor = faster_rcnn.FastRCNNPredictor(in_features, num_classes)
+        self.model.roi_heads.box_predictor = faster_rcnn.FastRCNNPredictor(in_features, self.num_classes)
     
     ###### Training ######    
     def _default_criterion(self, outputs):

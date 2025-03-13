@@ -48,7 +48,6 @@ class VGGModule(ClassificationModule):
     def _replace_transferred_layers(self) -> None:
         """Replace layers for transfer learning"""
         # Replace the classifier
-        num_classes = max(self.class_to_idx.values()) + 1
         self.model.classifier = nn.Sequential(
             nn.Linear(512 * 7 * 7, 4096),
             nn.ReLU(True),
@@ -56,7 +55,7 @@ class VGGModule(ClassificationModule):
             nn.Linear(4096, 4096),
             nn.ReLU(True),
             nn.Dropout(p=self.dropout),
-            nn.Linear(4096, num_classes),
+            nn.Linear(4096, self.num_classes),
         )
         # Initialize the weights
         for m in self.model.classifier.modules():

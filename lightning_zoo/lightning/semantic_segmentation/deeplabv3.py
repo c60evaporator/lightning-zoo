@@ -43,9 +43,8 @@ class DeepLabV3Module(SemanticSegModule):
     def _replace_transferred_layers(self) -> None:
         """Replace layers for transfer learning"""
         # Replace the box_predictor
-        num_classes = max(self.class_to_idx.values()) + 1
-        self.model.aux_classifier = fcn.FCNHead(1024, num_classes)
-        self.model.classifier = deeplabv3.DeepLabHead(2048, num_classes)
+        self.model.aux_classifier = fcn.FCNHead(1024, self.num_classes)
+        self.model.classifier = deeplabv3.DeepLabHead(2048, self.num_classes)
     
     ###### Training ######    
     def _default_criterion(self, outputs, targets):

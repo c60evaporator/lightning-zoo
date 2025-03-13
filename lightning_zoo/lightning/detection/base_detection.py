@@ -21,6 +21,7 @@ class DetectionModule(TorchVisionModule):
                          first_epoch_lr_scheduled, n_batches)
         # Class to index dict
         self.class_to_idx = class_to_idx
+        self.num_classes = max(self.class_to_idx.values()) + 1
         # Index to class dict
         self.idx_to_class = {v: k for k, v in self.class_to_idx.items()}
         na_cnt = 0

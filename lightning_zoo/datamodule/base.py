@@ -132,6 +132,10 @@ class TorchVisionDataModule(LightningDataModule, ABC):
     def _show_image_and_target(self, img, target, image_set='train', denormalize=True, ax=None, anomaly_indices=None):
         """Show the image and the target"""
         raise NotImplementedError
+    
+    def _convert_batch_to_torchvision(self, batch):
+        """Convert the batch to the torchvision format images and targets"""
+        return batch[0], batch[1]
 
     def show_first_minibatch(self, image_set='train'):
         # Check whether all the image sizes are the same
@@ -142,7 +146,8 @@ class TorchVisionDataModule(LightningDataModule, ABC):
         else:
             raise RuntimeError('The `image_set` argument should be "train" or "val"')
         batch_iter = iter(loader)
-        imgs, targets = next(batch_iter)
+        batch = next(batch_iter)
+        imgs, targets = self._convert_batch_to_torchvision(batch)
 
         for i, (img, target) in enumerate(zip(imgs, targets)):
             self._show_image_and_target(img, target, image_set)

@@ -193,8 +193,12 @@ class TorchVisionModule(pl.LightningModule, ABC):
     
     @abstractmethod
     def _calc_val_loss(self, preds, targets):
-        """Calculate the validation loss from the batch"""
+        """Calculate the validation loss"""
         raise NotImplementedError
+    
+    def _convert_preds_targets_to_torchvision(self, preds, targets):
+        """Convert the predictions and targets to TorchVision format"""
+        return preds, targets
     
     @abstractmethod
     def _get_preds_cpu(self, preds):
@@ -218,6 +222,8 @@ class TorchVisionModule(pl.LightningModule, ABC):
                      logger=True, batch_size=len(batch[0]),
                      sync_dist=True if self.trainer.num_devices > 1 else False)
             self.val_step_losses.append(loss.item())
+        # Convert the predicitions and targets to TorchVision format
+        preds, targets = self._convert_preds_targets_to_torchvision(preds, targets)
         # Store the predictions and targets for calculating metrics
         self.val_batch_preds.extend(self._get_preds_cpu(preds))
         self.val_batch_targets.extend(self._get_targets_cpu(targets))
@@ -273,10 +279,14 @@ class TorchVisionModule(pl.LightningModule, ABC):
         return self.model(inputs, target)
     
     ##### Optimizers and Schedulers ######
+    def _extract_optimizer_params(self):
+        """Extract the parameters for the optimizer"""
+        return [p for p in self.model.parameters() if p.requires_grad]
+
     def configure_optimizers(self):
         """Configure optimizers and LR schedulers"""
         # Optimizer
-        parameters = [p for p in self.model.parameters() if p.requires_grad]
+        parameters = self._extract_optimizer_params()
         if self.opt_name.startswith("sgd"):
             optimizer = torch.optim.SGD(parameters, lr=self.lr, momentum=self.momentum,
                                         weight_decay=self.weight_decay, nesterov="nesterov" in self.opt_name)

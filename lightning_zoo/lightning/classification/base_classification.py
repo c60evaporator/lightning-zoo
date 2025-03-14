@@ -72,7 +72,7 @@ class ClassificationModule(TorchVisionModule):
         return preds, targets
     
     def _calc_val_loss(self, preds, targets):
-        """Calculate the validation loss from the batch"""
+        """Calculate the validation loss from the predictions and targets"""
         # Calculate losses in the same way as training.
         return self.criterion(preds, targets)
     

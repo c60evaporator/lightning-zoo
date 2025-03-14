@@ -2,12 +2,13 @@ from torchvision.models.detection import faster_rcnn
 
 from .base_detection import DetectionModule
 
-class FasterRCNNModule(DetectionModule):
+class DetrModule(DetectionModule):
     def __init__(self, class_to_idx,
                  criterion=None,
                  pretrained=True, tuned_layers=None,
                  opt_name='sgd', lr=None, momentum=None, weight_decay=None, rmsprop_alpha=None, adam_betas=None, eps=None,
                  lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
+                 lr_backbone=1e-5,
                  first_epoch_lr_scheduled=False, n_batches=None,
                  ap_iou_threshold=0.5, ap_conf_threshold=0.0,
                  model_weight='fasterrcnn_resnet50_fpn'):
@@ -59,3 +60,20 @@ class FasterRCNNModule(DetectionModule):
         inputs, targets = batch
         outputs = self.model(inputs, targets)
         return self.criterion(outputs)
+    
+    ###### Validation ######
+    def _calc_val_loss(self, preds, targets):
+        """Calculate the validation loss from the predictions and targets"""
+        return self.criterion(preds)
+    
+    def _convert_preds_targets_to_torchvision(self, preds, targets):
+        """Convert the predictions and targets to TorchVision format"""
+        return preds, targets
+    
+    ##### Optimizers and Schedulers ######
+    def _extract_optimizer_params(self):
+        """Extract the parameters for the optimizer"""
+        # Reference (https://github.com/NielsRogge/Transformers-Tutorials/blob/master/DETR/Fine_tuning_DetrForObjectDetection_on_custom_dataset_(balloon).ipynb)
+        return [{"params": [p for n, p in self.model.named_parameters() if "backbone" not in n and p.requires_grad]},
+                {"params": [p for n, p in self.model.named_parameters() if "backbone" in n and p.requires_grad],
+                 "lr": self.lr_backbone}]

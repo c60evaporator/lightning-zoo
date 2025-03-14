@@ -55,7 +55,7 @@ class DetectionModule(TorchVisionModule):
         return self.model(batch[0]), batch[1]
 
     def _calc_val_loss(self, preds, targets):
-        """Calculate the validation loss from the batch"""
+        """Calculate the validation loss from the predictions and targets"""
         return None
     
     def _get_preds_cpu(self, preds):

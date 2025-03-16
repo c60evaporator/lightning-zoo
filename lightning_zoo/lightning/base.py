@@ -87,6 +87,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
         # Other
         self.model = None
         self.schedulers = None
+        self.display_val_prediction = True # TODO: Will be moved to Trainer
     
     ###### Set the model and the fine-tuning settings ######
     @abstractmethod
@@ -200,6 +201,10 @@ class TorchVisionModule(pl.LightningModule, ABC):
         """Convert the predictions and targets to TorchVision format"""
         return preds, targets
     
+    def _convert_images_to_torchvision(self, batch):
+        """Convert the predictions and targets to TorchVision format"""
+        return batch[0]
+    
     @abstractmethod
     def _get_preds_cpu(self, preds):
         """Get the predictions and store them to CPU as a list"""
@@ -216,17 +221,22 @@ class TorchVisionModule(pl.LightningModule, ABC):
         preds, targets = self._val_predict(batch)
         # Calculate the loss
         loss = self._calc_val_loss(preds, targets)
+        # Convert the predicitions and targets to TorchVision format
+        preds, targets = self._convert_preds_targets_to_torchvision(preds, targets)
         # Record the loss
         if loss is not None:
             self.log("val_loss", loss.item(), on_epoch=True, prog_bar=True, 
-                     logger=True, batch_size=len(batch[0]),
+                     logger=True, batch_size=len(targets),
                      sync_dist=True if self.trainer.num_devices > 1 else False)
             self.val_step_losses.append(loss.item())
-        # Convert the predicitions and targets to TorchVision format
-        preds, targets = self._convert_preds_targets_to_torchvision(preds, targets)
         # Store the predictions and targets for calculating metrics
         self.val_batch_preds.extend(self._get_preds_cpu(preds))
         self.val_batch_targets.extend(self._get_targets_cpu(targets))
+        # Display the predictions of the first batch TODO: Will be moved to Trainer
+        if self.display_val_prediction and batch_idx == 0:
+            img_torchvision = self._convert_images_to_torchvision(batch)
+            # TODO: Denormalize the images
+            self._plot_predictions(img_torchvision, preds, targets)
 
     @abstractmethod
     def _calc_epoch_metrics(self, preds, targets):

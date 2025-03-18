@@ -2,6 +2,7 @@ import torch
 from abc import abstractmethod
 import numpy as np
 import pandas as pd
+from matplotlib.figure import Figure
 
 from torch_extend.metrics.semantic_segmentation import segmentation_ious
 from torch_extend.display.semantic_segmentation import show_predicted_segmentations
@@ -12,11 +13,11 @@ class SemanticSegModule(TorchVisionModule):
     def __init__(self, class_to_idx: dict[str, int], border_idx,
                  model_name, criterion=None,
                  pretrained=True, tuned_layers=None,
-                 opt_name='sgd', lr=None, momentum=None, weight_decay=None, rmsprop_alpha=None, adam_betas=None, eps=None,
+                 opt_name='sgd', lr=None, weight_decay=None, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
                  lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
                  first_epoch_lr_scheduled=False, n_batches=None):
         super().__init__(model_name, criterion, pretrained, tuned_layers,
-                         opt_name, lr, momentum, weight_decay, rmsprop_alpha, adam_betas, eps,
+                         opt_name, lr, weight_decay, momentum, rmsprop_alpha, eps, adam_betas,
                          lr_scheduler, lr_step_size, lr_steps, lr_gamma, lr_T_max, lr_patience,
                          first_epoch_lr_scheduled, n_batches)
         # Class to index dict
@@ -94,11 +95,12 @@ class SemanticSegModule(TorchVisionModule):
         return {'mean_iou': mean_iou}
     
     ##### Display ######
-    def _plot_predictions(self, images, preds, targets, n_images=10):
+    def _plot_predictions(self, images, preds, targets, n_images=10) -> list[Figure]:
         """Plot the images with predictions and ground truths TODO: bg_idx should be from the datamodule (Trainer)"""
-        show_predicted_segmentations(images, preds, targets, self.idx_to_class,
-                                     bg_idx=0, border_idx=self.border_idx, plot_raw_image=True,
-                                     max_displayed_images=n_images)
+        figures = show_predicted_segmentations(images, preds, targets, self.idx_to_class,
+                                               bg_idx=0, border_idx=self.border_idx, plot_raw_image=True,
+                                               max_displayed_images=n_images)
+        return figures
         
     def _plot_metrics_detail(self, metric_name=None):
         """Plot the detail of the metrics"""

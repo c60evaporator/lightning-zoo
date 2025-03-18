@@ -6,7 +6,7 @@ class FasterRCNNModule(DetectionModule):
     def __init__(self, class_to_idx,
                  criterion=None,
                  pretrained=True, tuned_layers=None,
-                 opt_name='sgd', lr=None, momentum=None, weight_decay=None, rmsprop_alpha=None, adam_betas=None, eps=None,
+                 opt_name='sgd', lr=None, weight_decay=None, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
                  lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
                  first_epoch_lr_scheduled=False, n_batches=None,
                  ap_iou_threshold=0.5, ap_conf_threshold=0.0,
@@ -14,7 +14,7 @@ class FasterRCNNModule(DetectionModule):
         super().__init__(class_to_idx,
                          'fasterrcnn',
                          criterion, pretrained, tuned_layers,
-                         opt_name, lr, momentum, weight_decay, rmsprop_alpha, adam_betas, eps,
+                         opt_name, lr, weight_decay, momentum, rmsprop_alpha, eps, adam_betas,
                          lr_scheduler, lr_step_size, lr_steps, lr_gamma, lr_T_max, lr_patience,
                          first_epoch_lr_scheduled, n_batches,
                          ap_iou_threshold, ap_conf_threshold)

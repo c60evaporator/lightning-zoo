@@ -1,6 +1,8 @@
 import torch
 from abc import abstractmethod
 import numpy as np
+from matplotlib.figure import Figure
+from torchmetrics.detection import MeanAveragePrecision
 
 from torch_extend.metrics.detection import average_precisions
 from torch_extend.display.detection import show_predicted_bboxes, show_average_precisions
@@ -11,12 +13,12 @@ class DetectionModule(TorchVisionModule):
     def __init__(self, class_to_idx: dict[str, int],
                  model_name, criterion=None,
                  pretrained=True, tuned_layers=None,
-                 opt_name='sgd', lr=None, momentum=None, weight_decay=None, rmsprop_alpha=None, adam_betas=None, eps=None,
+                 opt_name='sgd', lr=None, weight_decay=None, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
                  lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
                  first_epoch_lr_scheduled=False, n_batches=None,
                  ap_iou_threshold=0.5, ap_conf_threshold=0.0):
         super().__init__(model_name, criterion, pretrained, tuned_layers,
-                         opt_name, lr, momentum, weight_decay, rmsprop_alpha, adam_betas, eps,
+                         opt_name, lr, weight_decay, momentum, rmsprop_alpha, eps, adam_betas,
                          lr_scheduler, lr_step_size, lr_steps, lr_gamma, lr_T_max, lr_patience,
                          first_epoch_lr_scheduled, n_batches)
         # Class to index dict
@@ -71,18 +73,19 @@ class DetectionModule(TorchVisionModule):
     def _calc_epoch_metrics(self, preds, targets):
         """Calculate the metrics from the targets and predictions"""
         # Calculate the mean Average Precision
-        aps = average_precisions(preds, targets,
-                                 self.idx_to_class, 
-                                 iou_threshold=self.ap_iou_threshold, conf_threshold=self.ap_conf_threshold)
-        mean_average_precision = np.mean([v['average_precision'] for v in aps.values()])
-        self.aps = aps
-        return {f'mAP@{int(self.ap_iou_threshold*100)}': mean_average_precision}
+        map_metric = MeanAveragePrecision(iou_type=["bbox"], class_metrics=True, extended_summary=True)
+        map_metric.update(preds, targets)
+        map_score = map_metric.compute()
+        self.last_preds = preds
+        self.last_targets = targets
+        return {'BoxAP_50-95': map_score["map"].item(), 'BoxAP_50': map_score["map_50"].item(), 'BoxAP_75': map_score["map_75"].item()}
     
     ##### Display ######
-    def _plot_predictions(self, images, preds, targets, n_images=10):
+    def _plot_predictions(self, images, preds, targets, n_images=10) -> list[Figure]:
         """Plot the images with predictions and ground truths"""
-        show_predicted_bboxes(images, preds, targets, self.idx_to_class,
-                              max_displayed_images=n_images)
+        figures = show_predicted_bboxes(images, preds, targets, self.idx_to_class,
+                                        max_displayed_images=n_images)
+        return figures
         
     def _plot_metrics_detail(self, metric_name=None):
         """Plot the detail of the metrics"""
@@ -90,4 +93,4 @@ class DetectionModule(TorchVisionModule):
             metric_name = 'average_precision'
         # Plot the average precisions
         if metric_name == 'average_precision':
-            show_average_precisions(self.aps)
+            show_average_precisions(self.last_preds, self.last_targets, self.idx_to_class)

@@ -4,6 +4,7 @@ from abc import abstractmethod
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 import seaborn as sns
 
 from ..base import TorchVisionModule
@@ -12,10 +13,10 @@ class ClassificationModule(TorchVisionModule):
     def __init__(self, class_to_idx: dict[str, int],
                  model_name, criterion=None,
                  pretrained=True, tuned_layers=None,
-                 opt_name='sgd', lr=None, momentum=None, weight_decay=None, rmsprop_alpha=None, adam_betas=None, eps=None,
+                 opt_name='sgd', lr=None, weight_decay=None, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
                  lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None):
         super().__init__(model_name, criterion, pretrained, tuned_layers,
-                         opt_name, lr, momentum, weight_decay, rmsprop_alpha, adam_betas, eps,
+                         opt_name, lr, weight_decay, momentum, rmsprop_alpha, eps, adam_betas,
                          lr_scheduler, lr_step_size, lr_steps, lr_gamma, lr_T_max, lr_patience,
                          False, None)
         # Class to index dict
@@ -99,16 +100,20 @@ class ClassificationModule(TorchVisionModule):
                 'f1_macro': f1_macro}
     
     ##### Display ######
-    def _plot_predictions(self, images, preds, targets, n_images=10):
+    def _plot_predictions(self, images, preds, targets, n_images=10) -> list[Figure]:
         """Plot the images with predictions and ground truths"""
+        figures = []
         for i, (img, pred, target) in enumerate(zip(images, preds, targets)):
+            fig, ax = plt.subplots(1, 1, figsize=(5, 5))
             predicted_label = torch.argmax(pred).item()
             img_permute = img.permute(1, 2, 0)
-            plt.imshow(img_permute)
-            plt.title(f'pred: {self.idx_to_class[predicted_label]}, true: {self.idx_to_class[target.item()]}')
+            ax.imshow(img_permute)
+            ax.set_title(f'pred: {self.idx_to_class[predicted_label]}, true: {self.idx_to_class[target.item()]}')
             plt.show()
+            figures.append(fig)
             if i >= n_images:
                 break
+        return figures
 
     def _plot_metrics_detail(self, metric_name=None):
         """Plot the detail of the metrics"""

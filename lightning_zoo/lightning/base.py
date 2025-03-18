@@ -1,8 +1,14 @@
+from typing import List
 import torch
 from torchvision.transforms import v2
 import albumentations as A
 import lightning.pytorch as pl
+from lightning.pytorch.loggers import CSVLogger, MLFlowLogger, TensorBoardLogger
+import yaml
+import io
+import cv2
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 import numpy as np
 import time
 from PIL import Image
@@ -12,9 +18,10 @@ from abc import ABC, abstractmethod
 class TorchVisionModule(pl.LightningModule, ABC):
     def __init__(self, model_name, criterion=None,
                  pretrained=False, tuned_layers=None,
-                 opt_name='sgd', lr=None, momentum=None, weight_decay=None, rmsprop_alpha=None, adam_betas=None, eps=None,
+                 opt_name='sgd', lr=None, weight_decay=None, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
                  lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
-                 first_epoch_lr_scheduled=False, n_batches=None):
+                 first_epoch_lr_scheduled=False, n_batches=None,
+                 save_first_prediction=True):
         super().__init__()
         self.model_name = model_name
         # Save the criterion
@@ -83,11 +90,44 @@ class TorchVisionModule(pl.LightningModule, ABC):
         self.first_epoch_lr_scheduler: torch.optim.lr_scheduler.LinearLR = None
         # Set the number batches for lr_scheduler
         self.n_batches = n_batches  # for first_epoch_lr_scheduler
+        # Logging parameters
+        self.save_first_prediction = save_first_prediction
 
         # Other
         self.model = None
         self.schedulers = None
-        self.display_val_prediction = True # TODO: Will be moved to Trainer
+
+    def _extract_hyperparameters(self) -> dict:
+        """Extract hyperparameters as a dictionary"""
+        hyperparameters = {
+            "model_name": self.model_name,
+            "criterion": self.criterion,
+            "tuned_layers": self.tuned_layers,
+            "opt_name": self.opt_name,
+            "lr": self.lr,            
+            "weight_decay": self.weight_decay,
+            "momentum": self.momentum,
+            "rmsprop_alpha": self.rmsprop_alpha,
+            "eps": self.eps,
+            "adam_betas": self.adam_betas,
+            "lr_scheduler": self.lr_scheduler,
+            "lr_step_size": self.lr_step_size,
+            "lr_steps": self.lr_steps,
+            "lr_gamma": self.lr_gamma,
+            "lr_T_max": self.lr_T_max,
+            "lr_patience": self.lr_patience,
+        }
+        return hyperparameters
+    
+    def _log_hyperparameters(self):
+        """Log hyperparameters"""
+        hyperparameters = self._extract_hyperparameters()
+        if isinstance(self.logger, CSVLogger):
+            yaml.dump(hyperparameters, open(f'{self.logger.log_dir}/hyperparameters.yaml', 'w'))
+        if isinstance(self.logger, MLFlowLogger):
+            self.logger.experiment.log_params(hyperparameters)
+        if isinstance(self.logger, TensorBoardLogger):
+            self.logger.log_hyperparams(hyperparameters)
     
     ###### Set the model and the fine-tuning settings ######
     @abstractmethod
@@ -232,11 +272,23 @@ class TorchVisionModule(pl.LightningModule, ABC):
         # Store the predictions and targets for calculating metrics
         self.val_batch_preds.extend(self._get_preds_cpu(preds))
         self.val_batch_targets.extend(self._get_targets_cpu(targets))
-        # Display the predictions of the first batch TODO: Will be moved to Trainer
-        if self.display_val_prediction and batch_idx == 0:
+        # Save the predictions of the first batch
+        if self.save_first_prediction and batch_idx == 0:
             img_torchvision = self._convert_images_to_torchvision(batch)
             # TODO: Denormalize the images
-            self._plot_predictions(img_torchvision, preds, targets)
+            figures = self._plot_predictions(img_torchvision, preds, targets)
+            for i, fig in enumerate(figures):
+                key = f'pred_img{i}'
+                if isinstance(self.logger, CSVLogger):
+                    fig.savefig(f'{self.logger.log_dir}/pred_img/{key}.png')
+                if isinstance(self.logger, MLFlowLogger):
+                    # Matplotlib figure to numpy array
+                    img_byte_arr = io.BytesIO()
+                    fig.savefig(img_byte_arr, format='png')
+                    img_byte_arr = cv2.imdecode(np.frombuffer(img_byte_arr.getvalue(), np.uint8), 1)
+                    img_byte_arr = img_byte_arr[:,:,::-1] # BGR->RGB
+                    self.logger.experiment.log_image(img_byte_arr, key=key, step=self.current_epoch)
+                
 
     @abstractmethod
     def _calc_epoch_metrics(self, preds, targets):
@@ -364,7 +416,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
             }
         
     ##### Display ######
-    def plot_train_history(self):
+    def plot_train_history(self) -> List[Figure]:
         """Plot the training history TODO: Will be moved to Trainer"""
         # Create a figure and axes
         n_metrics = len(self.val_metrics_all[0])
@@ -389,9 +441,10 @@ class TorchVisionModule(pl.LightningModule, ABC):
             axes[i+1].set_title(f'Validation {metric_name}')
         fig.tight_layout()
         plt.show()
+        return fig
 
     @abstractmethod
-    def _plot_predictions(self, images, preds, targets, n_images=10):
+    def _plot_predictions(self, images, preds, targets, n_images=10) -> list[Figure]:
         """Plot the images with predictions"""
         raise NotImplementedError
 

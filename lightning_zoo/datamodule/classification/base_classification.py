@@ -26,10 +26,12 @@ class ClassificationDataModule(TorchVisionDataModule):
     def __init__(self, batch_size, num_workers,
                  dataset_name,
                  train_transform=None, train_target_transform=None,
-                 eval_transform=None, eval_target_transform=None):
+                 eval_transform=None, eval_target_transform=None,
+                 out_fmt='torchvision', processor=None):
         super().__init__(batch_size, num_workers, dataset_name, 
                          None, train_transform, train_target_transform,
-                         None, eval_transform, eval_target_transform)
+                         None, eval_transform, eval_target_transform,
+                         out_fmt, processor)
         self.class_to_idx = None
         self.idx_to_class = None
     
@@ -67,7 +69,7 @@ class ClassificationDataModule(TorchVisionDataModule):
             ax=plt.gca()
         # Denormalize if normalization is included in transforms
         if denormalize:
-            img = self._denormalize_image(img, image_set=image_set)
+            img = self.denormalize_image(img, image_set=image_set)
         img_permute = img.permute(1, 2, 0)
         ax.imshow(img_permute)  # Display the image
         class_ok = self.idx_to_class is not None and target.item() in self.idx_to_class.keys()

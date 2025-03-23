@@ -1,48 +1,47 @@
 import torch
 from torchvision.ops.boxes import box_convert
 import torchvision.transforms.v2.functional as F
-from transformers import DetrImageProcessor
+from transformers import DetrForObjectDetection, DetrConfig
 
 from torch_extend.data_converter.detection import convert_batch_to_torchvision
 
 from .base_detection import DetectionModule
 
 class DetrModule(DetectionModule):
-    def __init__(self, class_to_idx, processor,
+    def __init__(self, class_to_idx,
                  criterion=None,
                  pretrained=True, tuned_layers=None,
-                 opt_name='sgd', lr=None, weight_decay=None, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
+                 opt_name='adamw', lr=2e-5, weight_decay=1e-4, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
                  lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
-                 lr_backbone=1e-5,
-                 first_epoch_lr_scheduled=False, n_batches=None,
-                 ap_iou_threshold=0.5, ap_conf_threshold=0.0,
-                 model_weight='fasterrcnn_resnet50_fpn'):
+                 first_epoch_lr_scheduled=False,
+                 model_weight='facebook/detr-resnet-50', lr_backbone=5e-6):
         super().__init__(class_to_idx,
-                         'fasterrcnn',
+                         'detr',
                          criterion, pretrained, tuned_layers,
                          opt_name, lr, weight_decay, momentum, rmsprop_alpha, eps, adam_betas,
                          lr_scheduler, lr_step_size, lr_steps, lr_gamma, lr_T_max, lr_patience,
-                         first_epoch_lr_scheduled, n_batches,
-                         ap_iou_threshold, ap_conf_threshold)
+                         first_epoch_lr_scheduled)
         self.model_weight = model_weight
-        self.model: faster_rcnn.FasterRCNN
-        self.processor: DetrImageProcessor = processor
+        self.model: DetrForObjectDetection
+        # Model parameters
+        self.lr_backbone = lr_backbone
         # Save hyperparameters
         self.save_hyperparameters()
 
     ###### Set the model and the fine-tuning settings ######
     def _get_model(self):
-        """Load FasterRCNN model based on the `model_weight`"""
-        if self.model_weight == 'fasterrcnn_resnet50_fpn':
-            model = faster_rcnn.fasterrcnn_resnet50_fpn(weights=faster_rcnn.FasterRCNN_ResNet50_FPN_Weights.COCO_V1 if self.pretrained else None)
-        elif self.model_weight == 'fasterrcnn_resnet50_fpn_v2':
-            model = faster_rcnn.fasterrcnn_resnet50_fpn_v2(weights=faster_rcnn.FasterRCNN_ResNet50_FPN_V2_Weights.COCO_V1 if self.pretrained else None)
-        elif self.model_weight == 'fasterrcnn_mobilenet_v3_large_320_fpn':
-            model = faster_rcnn.fasterrcnn_mobilenet_v3_large_320_fpn(weights=faster_rcnn.FasterRCNN_MobileNet_V3_Large_320_FPN_Weights.COCO_V1 if self.pretrained else None)
-        elif self.model_weight == 'fasterrcnn_mobilenet_v3_large_fpn':
-            model = faster_rcnn.fasterrcnn_mobilenet_v3_large_fpn(weights=faster_rcnn.FasterRCNN_MobileNet_V3_Large_FPN_Weights.COCO_V1 if self.pretrained else None)
+        """Load DETR model based on the `model_weight`"""
+        if self.pretrained:
+            model = DetrForObjectDetection.from_pretrained(self.model_weight,
+                                                        revision="no_timm",
+                                                        num_labels=len(self.idx_to_class),
+                                                        ignore_mismatched_sizes=True)
         else:
-            raise RuntimeError(f'Invalid `model_weight` {self.model_weight}.')
+            if 'resnet-50' in self.model_weight:
+                backbone = 'resnet50'
+            config = DetrConfig(use_pretrained_backbone=False, backbone=backbone,
+                                id2label=self.idx_to_class)
+            model = DetrForObjectDetection(config)
         return model
 
     @property
@@ -52,22 +51,36 @@ class DetrModule(DetectionModule):
     
     def _replace_transferred_layers(self) -> None:
         """Replace layers for transfer learning"""
-        # Replace the box_predictor
-        in_features = self.model.roi_heads.box_predictor.cls_score.in_features
-        self.model.roi_heads.box_predictor = faster_rcnn.FastRCNNPredictor(in_features, self.num_classes)
+        # Transformers models need to specify transferred and fine-tuned layers when initializing the model instance.
+        pass
+
+    def _set_model_and_params(self) -> torch.nn.Module:
+        # Set the model
+        self.model = self._get_model()
+        # Transformers models need to specify transferred and fine-tuned layers when initializing the model instance.
     
     ###### Training ######    
     def _default_criterion(self, outputs):
         """Default criterion (Sum of all the losses)"""
-        return sum(loss for loss in outputs.values())
+        return outputs.loss
     
     def _calc_train_loss(self, batch):
         """Calculate the training loss from the batch"""
-        inputs, targets = batch
-        outputs = self.model(inputs, targets)
+        pixel_values = batch["pixel_values"]
+        pixel_mask = batch["pixel_mask"]
+        labels = batch["labels"]
+        outputs = self.model(pixel_values=pixel_values, pixel_mask=pixel_mask, labels=labels)
         return self.criterion(outputs)
     
     ###### Validation ######
+    def _val_predict(self, batch):
+        """Predict the validation batch"""
+        pixel_values = batch["pixel_values"]
+        pixel_mask = batch["pixel_mask"]
+        labels = batch["labels"]
+        preds = self.model(pixel_values=pixel_values, pixel_mask=pixel_mask, labels=labels)
+        return preds, [t for t in batch["labels"]]
+    
     def _calc_val_loss(self, preds, targets):
         """Calculate the validation loss from the predictions and targets"""
         return self.criterion(preds)
@@ -76,21 +89,21 @@ class DetrModule(DetectionModule):
         """Convert the predictions and targets to TorchVision format"""
         # Post-process the predictions
         orig_target_sizes = torch.stack([target["orig_size"] for target in targets], dim=0)
-        results = self.processor.post_process_object_detection(
+        results = self.trainer.datamodule.processor.post_process_object_detection(
             preds, target_sizes=orig_target_sizes, threshold=0
         )
         # Convert the targets
         targets = [{
             "boxes": box_convert(target["boxes"], 'cxcywh', 'xyxy') \
-                    * torch.tensor([orig[1], orig[0], orig[1], orig[0]], dtype=torch.float32).to(self.device) if target["boxes"].shape[0] > 0 \
-                    else torch.zeros(size=(0, 4), dtype=torch.float32).to(self.device),
+                    * torch.tensor([orig[1], orig[0], orig[1], orig[0]], dtype=torch.float32, device=self.device) if target["boxes"].shape[0] > 0 \
+                    else torch.zeros(size=(0, 4), dtype=torch.float32, device=self.device),
             "labels": target["class_labels"]
         } for target, orig in zip(targets, orig_target_sizes)]
         # Return as TorchVision format
         return results, targets
     
-    def _convert_images_to_torchvision(self, batch):
-        """Convert the predictions and targets to TorchVision format"""
+    def _convert_images_for_pred_to_torchvision(self, batch):
+        """Convert the displayed image to TorchVision format"""
         proc_imgs, _ = convert_batch_to_torchvision(batch, in_fmt='transformers')
         orig_sizes = [label["orig_size"] for label in batch["labels"]]
         return [F.resize(img, orig_size.tolist()) for img, orig_size in zip(proc_imgs, orig_sizes)]

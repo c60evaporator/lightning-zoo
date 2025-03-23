@@ -30,8 +30,6 @@ LR_T_MAX = EPOCHS  # For CosineAnnealingLR
 LR_PATIENCE = 10  # For ReduceLROnPlateau
 # Model Parameters
 MODEL_WEIGHT = 'fasterrcnn_resnet50_fpn'
-# Metrics Parameters
-AP_IOU_THRESHOLD = 0.5
 
 # Select the device
 DEVICE = 'cuda'
@@ -91,7 +89,6 @@ model = FasterRCNNModule(class_to_idx=datamodule.class_to_idx,
                          rmsprop_alpha=RMSPROP_ALPHA, adam_betas=ADAM_BETAS, eps=EPS,
                          lr_scheduler=LR_SCHEDULER, lr_gamma=LR_GAMMA, 
                          lr_step_size=LR_STEP_SIZE, lr_steps=LR_STEPS, lr_T_max=LR_T_MAX, lr_patience=LR_PATIENCE,
-                         ap_iou_threshold=AP_IOU_THRESHOLD,
                          model_weight=MODEL_WEIGHT)
 
 # %% Training

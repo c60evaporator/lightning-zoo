@@ -7,35 +7,13 @@ import matplotlib.pyplot as plt
 import os
 from abc import abstractmethod
 
-from torch_extend.display.detection import show_bounding_boxes
-from torch_extend.data_converter.detection import convert_batch_to_torchvision
+from torch_extend.display.instance_segmentation import show_instance_masks
+from torch_extend.data_converter.instance_segmentation import convert_batch_to_torchvision
 
 from ..base import TorchVisionDataModule
 
-###### Annotation Validation TypeDicts for Object Detection ######
-class DetImageValidationResult(TypedDict):
-    img_id: int
-    img_path: str
-    img_width: int
-    img_height: int
-    n_boxes: int
-    anomaly: bool
-
-class DetBoxValidationResult(TypedDict):
-    img_id: int
-    img_path: str
-    label: int
-    label_name: str
-    bbox: list[float]
-    box_width: float
-    box_height: float
-    anomaly: bool
-    anomaly_box_width: bool
-    anomaly_box_height: bool
-    anomaly_label_idx: bool
-
 ###### Main Class ######
-class DetectionDataModule(TorchVisionDataModule):
+class InstanceSegDataModule(TorchVisionDataModule):
     def __init__(self, batch_size, num_workers,
                  dataset_name,
                  train_transforms=None, train_transform=None, train_target_transform=None,
@@ -49,8 +27,8 @@ class DetectionDataModule(TorchVisionDataModule):
         self.idx_to_class = None
         # Whether to use the collate function if the image sizes are the same
         self.use_collate_fn_if_same_img_size = True
-    
-    ###### Dataset Methods ######        
+
+    ###### Dataset Methods ######
     def collate_fn_same_img_size(self, batch):
         """Collate function for the dataloader when the image sizes are the same"""
         # Convert the batch to the torchvision format
@@ -58,11 +36,12 @@ class DetectionDataModule(TorchVisionDataModule):
             return tuple(zip(*batch))
         # Convert the batch to the transformers (DETR) format
         elif self.out_fmt == 'transformers':
-            pixel_values = [item['pixel_values'] for item in batch]
-            pixel_mask = [item['pixel_mask'] for item in batch]
-            labels = [item['labels'] for item in batch]
-            return {'pixel_values': pixel_values, 'pixel_mask': pixel_mask, 'labels': labels}
-        
+            pixel_values = torch.stack([item['pixel_values'] for item in batch])
+            pixel_mask = torch.stack([item['pixel_mask'] for item in batch])
+            mask_labels = [item['mask_labels'] for item in batch]
+            class_labels = [item['class_labels'] for item in batch]
+            return {"pixel_values": pixel_values, "pixel_mask": pixel_mask, "class_labels": class_labels, "mask_labels": mask_labels}
+
     def collate_fn_different_img_size(self, batch):
         """Collate function for the dataloader when the image sizes are not the same"""
         # Convert the batch to the torchvision format
@@ -70,11 +49,17 @@ class DetectionDataModule(TorchVisionDataModule):
             return tuple(zip(*batch))
         # Convert the batch to the transformers (DETR) format
         elif self.out_fmt == 'transformers':
-            labels = [item['labels'] for item in batch]
-            # Pad the images
-            pixel_values = [item['pixel_values'] for item in batch]
-            encoding = self.processor.pad(pixel_values, return_tensors="pt")
-            return {'pixel_values': encoding['pixel_values'], 'pixel_mask': encoding['pixel_mask'], 'labels': labels}
+            images = [item['images'] for item in batch]
+            # Pad the images and masks
+            segmentation_maps = [item['segmentation_maps'] for item in batch]
+            instance_id_to_semantic_id = [item['instance_id_to_semantic_id'] for item in batch]
+            encoding = self.processor.encode_inputs(images, segmentation_maps, 
+                                                    instance_id_to_semantic_id,
+                                                    return_tensors="pt")
+            return {"pixel_values": encoding['pixel_values'],
+                    'pixel_mask': encoding['pixel_mask'],
+                    "class_labels": encoding["class_labels"],
+                    "mask_labels": encoding["mask_labels"]}
     
     def _setup(self):
         self.train_dataset, self.val_dataset, self.test_dataset = self._get_datasets()
@@ -100,10 +85,11 @@ class DetectionDataModule(TorchVisionDataModule):
         if denormalize:  # Denormalize if normalization is included in transforms
             img = self.denormalize_image(img, image_set=image_set)
         img = (img*255).to(torch.uint8)  # Change from float[0, 1] to uint[0, 255]
-        boxes, labels = target['boxes'], target['labels']
-        show_bounding_boxes(img, boxes, labels=labels,
-                            idx_to_class=self.idx_to_class,
-                            anomaly_indices=anomaly_indices, ax=ax)
+        boxes, labels, masks = target['boxes'], target['labels'], target['masks']
+        show_instance_masks(img, masks=masks, boxes=boxes,
+                            border_mask=target['border_mask'] if 'border_mask' in target else None,
+                            labels=labels,
+                            idx_to_class=self.idx_to_class, ax=ax)
         
     def _convert_batch_to_torchvision(self, batch):
         """Convert the batch to the torchvision format images and targets"""
@@ -120,50 +106,8 @@ class DetectionDataModule(TorchVisionDataModule):
 
     def _validate_annotation(self, imgs, targets, i_baches, batch_size, anomaly_save_path, denormalize, shuffle):
         """Validate the annotation"""
-        img_validations: list[DetImageValidationResult] = []
-        box_validations: list[DetBoxValidationResult]  = []
-        for img, target in zip(imgs, targets):
-            # Image information
-            img_result: DetImageValidationResult = {}
-            image_id = int(os.path.splitext(os.path.basename(target['image_path']))[0])
-            img_result['image_id'] = image_id
-            img_result['image_path'] = target['image_path']
-            img_result['image_width'] = img.size()[-1]
-            img_result['image_height'] = img.size()[-2]
-            img_result['n_boxes'] = len(target['boxes'])
-            img_result['anomaly'] = False
-            anomaly_indices = []
-            # Bounding box (target) validation
-            for i_box, (box, label) in enumerate(zip(target['boxes'], target['labels'])):
-                box_list = box.tolist()
-                box_result: DetBoxValidationResult = {}
-                box_result['image_id'] = image_id
-                box_result['image_path'] = target['image_path']
-                box_result['label'] = label.item()
-                box_result['label_name'] = str(box_result['label']) if self.idx_to_class is None else self.idx_to_class[box_result['label']]
-                box_result['bbox'] = box_list
-                box_result['box_width'] = box_list[2] - box_list[0]
-                box_result['box_height'] = box_list[3] - box_list[1]
-                # Negative box width
-                box_result['anomaly_box_width'] = box_result['box_width'] <= 0
-                # Negative box width
-                box_result['anomaly_box_height'] = box_result['box_height'] <= 0
-                # Label index validation
-                box_result['anomaly_label_idx'] = box_result['label'] not in self.idx_to_class.keys()
-                # Final anomaly judgement
-                box_result['anomaly'] = box_result['anomaly_box_width'] or box_result['anomaly_box_height'] or box_result['anomaly_label_idx']
-                if box_result['anomaly']:
-                    img_result['anomaly'] = True
-                    anomaly_indices.append(i_box)
-                box_validations.append(box_result)
-            # Save the anomaly image
-            if img_result['anomaly']:
-                fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-                self._show_image_and_target(img, target, denormalize=denormalize, ax=ax, anomaly_indices=anomaly_indices)
-                fig.savefig(f'{anomaly_save_path}/{os.path.basename(target["image_path"])}')
-                plt.show()
-            img_validations.append(img_result)
-        return img_validations, box_validations
+        # TODO: Implement the method
+        pass
     
     ###### Transform Methods ######
     @property

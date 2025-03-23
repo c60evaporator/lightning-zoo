@@ -11,8 +11,8 @@ sys.path.append(ROOT)
 # General Parameters
 EPOCHS = 4
 BATCH_SIZE = 4  # Effective Batch Size. Bigger batch size increase the training time in Object Detection. Very mall batch size (E.g., n=1, 2) results in bad accuracy and poor Batch Normalization.
-NUM_WORKERS = 4  # 2 * Number of devices (GPUs) is appropriate in general, but this number doesn't matter in Object Detection.
-DATA_ROOT = './datasets/VOC2012'
+NUM_WORKERS = 2  # 2 * Number of devices (GPUs) is appropriate in general, but this number doesn't matter in Object Detection.
+DATA_ROOT = '../detection/datasets/VOC2012'
 # Optimizer Parameters
 OPT_NAME = 'sgd'
 LR = 0.005  # Effective Learning Rate (https://lightning.ai/forums/t/effective-learning-rate-and-batch-size-with-lightning-in-ddp/101/2)
@@ -29,7 +29,7 @@ LR_STEPS = [16, 24]  # For MultiStepLR
 LR_T_MAX = EPOCHS  # For CosineAnnealingLR
 LR_PATIENCE = 10  # For ReduceLROnPlateau
 # Model Parameters
-MODEL_WEIGHT = 'fasterrcnn_resnet50_fpn'
+MODEL_WEIGHT = 'maskrcnn_resnet50_fpn'
 
 # Select the device
 DEVICE = 'cuda'
@@ -42,14 +42,14 @@ else:
 # Set the random seed
 torch.manual_seed(42)
 # Multi GPU (https://github.com/pytorch/pytorch/issues/40403)
-NUM_GPU = 2
+NUM_GPU = 1
 
 # %% Define DataModule
 ###### 2. Define the dataset (DataModule) ######
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-from lightning_zoo.datamodule.detection.voc import VOCDetectionDataModule
+from lightning_zoo.datamodule.instance_segmentation.voc import VOCInstanceSegDataModule
 
 # Preprocessing
 NORM_MEAN = [0.0, 0.0, 0.0]
@@ -57,7 +57,7 @@ NORM_STD = [1.0, 1.0, 1.0]
 # Transforms for training
 train_transform = A.Compose([
     A.Normalize(NORM_MEAN, NORM_STD),  # Normalization from uint8 [0, 255] to float32 [0.0, 1.0]
-    ToTensorV2()  # Convert from numpy.ndarray to torch.Tensor
+    ToTensorV2(),  # Convert from numpy.ndarray to torch.Tensor
 ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
 # Transforms for validation and test
 eval_transform = A.Compose([
@@ -66,9 +66,9 @@ eval_transform = A.Compose([
 ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
 
 # Datamodule
-datamodule = VOCDetectionDataModule(batch_size=int(BATCH_SIZE/NUM_GPU), num_workers=NUM_WORKERS, root=DATA_ROOT,
-                                    dataset_name='VOC2012Detection',
-                                    train_transforms=train_transform, eval_transforms=eval_transform)
+datamodule = VOCInstanceSegDataModule(batch_size=int(BATCH_SIZE/NUM_GPU), num_workers=NUM_WORKERS, root=DATA_ROOT,
+                                      dataset_name='VOC2012InstanceSegmentation',
+                                      train_transforms=train_transform, eval_transforms=eval_transform)
 datamodule.prepare_data()
 datamodule.setup()
 
@@ -80,14 +80,14 @@ datamodule.show_first_minibatch(image_set='train')
 
 # %% Create PyTorch Lightning module
 ###### 3. Define the model (LightningModule) ######
-from lightning_zoo.lightning.detection.faster_rcnn import FasterRCNNModule
+from lightning_zoo.lightning.instance_segmentation.mask_rcnn import MaskRCNNModule
 
-model = FasterRCNNModule(class_to_idx=datamodule.class_to_idx, 
-                         opt_name=OPT_NAME, lr=LR*NUM_GPU, momentum=MOMENTUM, weight_decay=WEIGHT_DECAY,
-                         rmsprop_alpha=RMSPROP_ALPHA, adam_betas=ADAM_BETAS, eps=EPS,
-                         lr_scheduler=LR_SCHEDULER, lr_gamma=LR_GAMMA, 
-                         lr_step_size=LR_STEP_SIZE, lr_steps=LR_STEPS, lr_T_max=LR_T_MAX, lr_patience=LR_PATIENCE,
-                         model_weight=MODEL_WEIGHT)
+model = MaskRCNNModule(class_to_idx=datamodule.class_to_idx, 
+                       opt_name=OPT_NAME, lr=LR*NUM_GPU, momentum=MOMENTUM, weight_decay=WEIGHT_DECAY,
+                       rmsprop_alpha=RMSPROP_ALPHA, adam_betas=ADAM_BETAS, eps=EPS,
+                       lr_scheduler=LR_SCHEDULER, lr_gamma=LR_GAMMA, 
+                       lr_step_size=LR_STEP_SIZE, lr_steps=LR_STEPS, lr_T_max=LR_T_MAX, lr_patience=LR_PATIENCE,
+                       model_weight=MODEL_WEIGHT)
 
 # %% Training
 ###### 4. Training (Trainer) ######

@@ -13,10 +13,12 @@ class CIFAR10DataModule(ClassificationDataModule):
                  root, download=True,
                  dataset_name='CIFAR10',
                  train_transform=None, train_target_transform=None,
-                 eval_transform=None, eval_target_transform=None):
+                 eval_transform=None, eval_target_transform=None,
+                 out_fmt='torchvision', processor=None):
         super().__init__(batch_size, num_workers, dataset_name, 
                          train_transform, train_target_transform,
-                         eval_transform, eval_target_transform)
+                         eval_transform, eval_target_transform,
+                         out_fmt, processor)
         self.root = root
         self.download = download
     

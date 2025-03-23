@@ -107,7 +107,7 @@ class ClassificationModule(TorchVisionModule):
             fig, ax = plt.subplots(1, 1, figsize=(5, 5))
             predicted_label = torch.argmax(pred).item()
             img_permute = img.permute(1, 2, 0)
-            ax.imshow(img_permute)
+            ax.imshow(img_permute.cpu())
             ax.set_title(f'pred: {self.idx_to_class[predicted_label]}, true: {self.idx_to_class[target.item()]}')
             plt.show()
             figures.append(fig)

@@ -1,16 +1,16 @@
 import torch
 from abc import abstractmethod
 import numpy as np
-import pandas as pd
 from matplotlib.figure import Figure
+from torchmetrics.detection import MeanAveragePrecision
 
-from torch_extend.metrics.semantic_segmentation import segmentation_ious
-from torch_extend.display.semantic_segmentation import show_predicted_segmentations
+from torch_extend.display.detection import show_average_precisions
+from torch_extend.display.instance_segmentation import show_predicted_instances
 
 from ..base import TorchVisionModule
 
-class SemanticSegModule(TorchVisionModule):
-    def __init__(self, class_to_idx: dict[str, int], border_idx,
+class InstanceSegModule(TorchVisionModule):
+    def __init__(self, class_to_idx: dict[str, int],
                  model_name, criterion=None,
                  pretrained=True, tuned_layers=None,
                  opt_name='sgd', lr=None, weight_decay=None, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
@@ -22,7 +22,6 @@ class SemanticSegModule(TorchVisionModule):
                          first_epoch_lr_scheduled)
         # Class to index dict
         self.class_to_idx = class_to_idx
-        self.border_idx = border_idx  # Border index that is ignored in the evaluation
         self.num_classes = max(self.class_to_idx.values()) + 1
         # Index to class dict
         self.idx_to_class = {v: k for k, v in self.class_to_idx.items()}
@@ -51,61 +50,56 @@ class SemanticSegModule(TorchVisionModule):
     ###### Validation ######
     def _val_predict(self, batch):
         """Predict the validation batch"""
-        if isinstance(batch[0], torch.Tensor):
-            preds = self.model(batch[0])
-            if isinstance(preds, dict) and 'out' in preds.keys():
-                preds = preds['out']
-        elif isinstance(batch[0], tuple):
-            preds = [self.model(img.unsqueeze(0))
-                     for img in batch[0]]
-            preds = tuple([pred.squeeze(0) if isinstance(pred, torch.Tensor) else pred['out'].squeeze(0)
-                        for pred in preds])
-        return preds, batch[1]
-    
+        return self.model(batch[0]), batch[1]
+
     def _calc_val_loss(self, preds, targets):
         """Calculate the validation loss from the predictions and targets"""
         return None
     
+    def _convert_preds_targets_to_torchvision(self, preds, targets):
+        """Convert the predictions and targets to TorchVision format"""
+        # Mask float32(N, 1, H, W) -> uint8(N, H, W)
+        preds = [{k: torch.round(v.squeeze(1)).to(torch.uint8)
+                if k == 'masks' else v for k, v in pred.items()}
+                for pred in preds]
+        return preds, targets
+    
     def _get_preds_cpu(self, preds):
         """Get the predictions and store them to CPU as a list"""
-        if isinstance(preds, torch.Tensor):  # Batch images of torch.Tensor
-            return [pred for pred in preds.cpu()]
-        elif isinstance(preds, tuple):  # Tuple images by collate_fn
-            return [pred.cpu() for pred in preds]
+        return [{k: v.cpu() for k, v in pred.items()}
+                for pred in preds]
     
     def _get_targets_cpu(self, targets):
         """Get the targets and store them to CPU as a list"""
-        return [target.cpu() for target in targets]
+        return [{k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in target.items()}
+                for target in targets]
     
     def _calc_epoch_metrics(self, preds, targets):
         """Calculate the metrics from the targets and predictions"""
         # Calculate the mean Average Precision
-        tps, fps, fns, ious = segmentation_ious(preds, targets, self.idx_to_class, self.border_idx)
-        mean_iou = np.mean(ious)
-        self.ious = {
-            k: {
-                'label_name': v,
-                'tp': tps[i],
-                'fp': fps[i],
-                'fn': fns[i],
-                'iou': ious[i]
-            }
-            for i, (k, v) in enumerate(self.idx_to_class.items())
-        }
-        return {'mean_iou': mean_iou}
+        if self.trainer.num_devices == 1:
+            map_metric = MeanAveragePrecision(iou_type=["bbox", "segm"], class_metrics=True, extended_summary=True)
+        else:  # Avoid Runtime Error in DDP strategy (https://github.com/Lightning-AI/pytorch-lightning/issues/18803#issuecomment-2355778741)
+            map_metric = MeanAveragePrecision(iou_type=["bbox", "segm"], class_metrics=True, extended_summary=True,
+                                              compute_on_cpu=False, sync_on_compute=False, dist_sync_on_step=True)
+        map_metric.update(preds, targets)
+        map_score = map_metric.compute()
+        self.last_preds = preds
+        self.last_targets = targets
+        return {'MaskAP_50-95': map_score["segm_map"].item(), 'MaskAP_50': map_score["segm_map_50"].item(), 'BoxAP_50-95': map_score["bbox_map"].item(), 'BoxAP_50': map_score["bbox_map_50"].item()}
     
     ##### Display ######
     def _plot_predictions(self, images, preds, targets, n_images=10) -> list[Figure]:
-        """Plot the images with predictions and ground truths TODO: bg_idx should be from the datamodule (Trainer)"""
-        figures = show_predicted_segmentations(images, preds, targets, self.idx_to_class,
-                                               bg_idx=0, border_idx=self.border_idx, plot_raw_image=True,
-                                               max_displayed_images=n_images)
+        """Plot the images with predictions and ground truths"""
+        figures = show_predicted_instances(images, preds, targets, self.idx_to_class,
+                                           border_mask=targets['border_mask'] if 'border_mask' in targets else None,
+                                           max_displayed_images=n_images)
         return figures
         
     def _plot_metrics_detail(self, metric_name=None):
         """Plot the detail of the metrics"""
         if metric_name is None:
-            metric_name = 'iou'
-        # Plot the IOUs of each class
-        if metric_name == 'iou':
-            print(pd.DataFrame([v for k, v in self.ious.items()]))
+            metric_name = 'average_precision'
+        # Plot the average precisions
+        if metric_name == 'average_precision':
+            show_average_precisions(self.last_preds, self.last_targets, self.idx_to_class)

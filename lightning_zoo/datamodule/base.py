@@ -1,5 +1,6 @@
 from lightning.pytorch import LightningDataModule
 import albumentations as A
+from transformers import BaseImageProcessor
 from torchvision.transforms import v2
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import RandomSampler
@@ -10,12 +11,14 @@ import time
 import inspect
 
 from abc import ABC, abstractmethod
+from torch_extend.validate.common import validate_same_img_size
 
 class TorchVisionDataModule(LightningDataModule, ABC):
     def __init__(self, batch_size, num_workers,
                  dataset_name,
                  train_transforms=None, train_transform=None, train_target_transform=None,
-                 eval_transforms=None, eval_transform=None, eval_target_transform=None):
+                 eval_transforms=None, eval_transform=None, eval_target_transform=None,
+                 out_fmt='torchvision', processor=None):
         super().__init__()
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -38,23 +41,34 @@ class TorchVisionDataModule(LightningDataModule, ABC):
             self.eval_transforms = eval_transforms
             self.eval_transform = eval_transform
             self.eval_target_transform = eval_target_transform
+        # Output format ("torchvision" or "transformers")
+        self.out_fmt = out_fmt
+        # Processor (For Transformers models)
+        if processor is None:
+            self.processor: BaseImageProcessor = self.default_processor
+        else:
+            if not isinstance(processor, BaseImageProcessor):
+                raise ValueError('The `processor` argument should be an instance of Transformers image processor')
+            self.processor: BaseImageProcessor = processor
         # Check whether all the image sizes are the same during training
-        self.same_img_size = False
-        image_transform = self.train_transforms if self.train_transforms is not None else self.train_transform
-        for tr in image_transform:
-            if (isinstance(tr, v2.Resize) and len(tr.size) == 2) or isinstance(tr, A.Resize):
-                self.same_img_size = True
-                break
+        train_image_transform = self.train_transforms if self.train_transforms is not None else self.train_transform
+        eval_image_transform = self.eval_transforms if self.eval_transforms is not None else self.eval_transform
+        self.same_img_size_train = validate_same_img_size(train_image_transform, self.processor)
+        self.same_img_size_eval = validate_same_img_size(eval_image_transform, self.processor)
+        # Whether to use the collate function if the image sizes are the same
+        self.use_collate_fn_if_same_img_size = False
         # Other
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
-        # Same image size validation
-        self.same_img_size_train = None
-        self.same_img_size_eval = None
 
     ###### Dataset Methods ######
-    def collate_fn(self, batch):
+    def collate_fn_same_img_size(self, batch):
+        """Collate function for the dataloader when the image sizes are the same"""
+        return None
+    
+    def collate_fn_different_img_size(self, batch):
+        """Collate function for the dataloader when the image sizes are not the same"""
         return tuple(zip(*batch))
     
     def _get_transform(self, image_set, ignore_transforms=False):
@@ -96,36 +110,56 @@ class TorchVisionDataModule(LightningDataModule, ABC):
     
     def train_dataloader(self) -> list[str]:
         """Create train dataloader"""
+        if self.same_img_size_train:
+            collate_fn = self.collate_fn_same_img_size if self.use_collate_fn_if_same_img_size else None
+        else:
+            collate_fn = self.collate_fn_different_img_size
         return DataLoader(self.train_dataset, batch_size=self.batch_size, 
                           shuffle=True, num_workers=self.num_workers,
-                          collate_fn=None if self.same_img_size_train else self.collate_fn)
+                          collate_fn=collate_fn)
     
     def val_dataloader(self) -> list[str]:
         """Create validation dataloader"""
+        if self.same_img_size_eval:
+            collate_fn = self.collate_fn_same_img_size if self.use_collate_fn_if_same_img_size else None
+        else:
+            collate_fn = self.collate_fn_different_img_size
         return DataLoader(self.val_dataset, batch_size=self.batch_size, 
                           shuffle=False, num_workers=self.num_workers,
-                          collate_fn=None if self.same_img_size_eval else self.collate_fn)
+                          collate_fn=collate_fn)
     
     def test_dataloader(self) -> list[str]:
         """Create test dataloader"""
+        if self.same_img_size_eval:
+            collate_fn = self.collate_fn_same_img_size if self.collate_fn_same_img_size() is not None else None
+        else:
+            collate_fn = self.collate_fn_different_img_size
         return DataLoader(self.test_dataset, batch_size=self.batch_size, 
                           shuffle=False, num_workers=self.num_workers,
-                          collate_fn=None if self.same_img_size_eval else self.collate_fn)
+                          collate_fn=collate_fn)
     
     ###### Display methods ######
-    def _denormalize_image(self, img, image_set='train'):
+    def denormalize_image(self, img, image_set='train'):
         """Denormalize the image for showing it"""
+        # Denormalization based on the TorchVision/Albumentation transforms
         if image_set == 'train':
             image_transform = self.train_transforms if self.train_transforms is not None else self.train_transform
         elif image_set == 'val' or image_set == 'test':
             image_transform = self.eval_transforms if self.eval_transforms is not None else self.eval_transform
-        for tr in image_transform:
+        for tr in image_transform.transforms:
             if isinstance(tr, v2.Normalize) or isinstance(tr, A.Normalize):
-                reverse_transform = v2.Compose([
+                denormalize_transform = v2.Compose([
                     v2.Normalize(mean=[-mean/std for mean, std in zip(tr.mean, tr.std)],
                                         std=[1/std for std in tr.std])
                 ])
-                return reverse_transform(img)
+                img = denormalize_transform(img)
+        # Denormalization based on the processor of Transformers
+        if self.processor is not None and self.processor.do_normalize:
+            denormalize_transform = v2.Compose([
+                v2.Normalize(mean=[-mean/std for mean, std in zip(self.processor.image_mean, self.processor.image_std)],
+                            std=[1/std for std in self.processor.image_std])
+            ])
+            img = denormalize_transform(img)
         return img
     
     @abstractmethod
@@ -261,3 +295,8 @@ class TorchVisionDataModule(LightningDataModule, ABC):
     def default_eval_target_transform(self) -> v2.Compose | A.Compose:
         """Default target_transform for validation and test"""
         raise NotImplementedError
+    
+    @property
+    def default_processor(self) -> BaseImageProcessor:
+        """Default image processor for Transformers models"""
+        return None

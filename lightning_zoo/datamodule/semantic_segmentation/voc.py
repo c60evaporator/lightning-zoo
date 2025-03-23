@@ -12,10 +12,12 @@ class VOCSemanticSegDataModule(SemanticSegDataModule):
                  dataset_name='VOC2012SemanticSeg',
                  train_transforms=None, train_transform=None, train_target_transform=None,
                  eval_transforms=None, eval_transform=None, eval_target_transform=None,
+                 out_fmt='torchvision', processor=None,
                  border_idx=255, bg_idx=0):
         super().__init__(batch_size, num_workers, dataset_name,
                          train_transforms, train_transform, train_target_transform,
                          eval_transforms, eval_transform, eval_target_transform,
+                         out_fmt, processor,
                          border_idx, bg_idx)
         self.root = root
         self.idx_to_class = idx_to_class

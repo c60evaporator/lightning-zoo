@@ -39,10 +39,12 @@ class SemanticSegDataModule(TorchVisionDataModule):
                  dataset_name,
                  train_transforms=None, train_transform=None, train_target_transform=None,
                  eval_transforms=None, eval_transform=None, eval_target_transform=None,
+                 out_fmt='torchvision', processor=None,
                  border_idx=None, bg_idx=0):
         super().__init__(batch_size, num_workers, dataset_name,
                          train_transforms, train_transform, train_target_transform,
-                         eval_transforms, eval_transform, eval_target_transform)
+                         eval_transforms, eval_transform, eval_target_transform,
+                         out_fmt, processor)
         self.class_to_idx = None
         self.idx_to_class = None
         self.border_idx = border_idx
@@ -79,7 +81,7 @@ class SemanticSegDataModule(TorchVisionDataModule):
     def _show_image_and_target(self, img, target, image_set='train', denormalize=True, ax=None, anomaly_indices=None):
         """Show the image and the target"""
         if denormalize:  # Denormalize if normalization is included in transforms
-            img = self._denormalize_image(img, image_set=image_set)
+            img = self.denormalize_image(img, image_set=image_set)
         img = (img*255).to(torch.uint8)  # Change from float[0, 1] to uint[0, 255]
         # Show the image with the target mask
         show_segmentations(img, target, self.idx_to_class, bg_idx=self.bg_idx, border_idx=self.border_idx)

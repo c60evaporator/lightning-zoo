@@ -4,7 +4,6 @@ import numpy as np
 from matplotlib.figure import Figure
 from torchmetrics.detection import MeanAveragePrecision
 
-from torch_extend.metrics.detection import average_precisions
 from torch_extend.display.detection import show_predicted_bboxes, show_average_precisions
 
 from ..base import TorchVisionModule
@@ -15,12 +14,11 @@ class DetectionModule(TorchVisionModule):
                  pretrained=True, tuned_layers=None,
                  opt_name='sgd', lr=None, weight_decay=None, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
                  lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
-                 first_epoch_lr_scheduled=False, n_batches=None,
-                 ap_iou_threshold=0.5, ap_conf_threshold=0.0):
+                 first_epoch_lr_scheduled=False):
         super().__init__(model_name, criterion, pretrained, tuned_layers,
                          opt_name, lr, weight_decay, momentum, rmsprop_alpha, eps, adam_betas,
                          lr_scheduler, lr_step_size, lr_steps, lr_gamma, lr_T_max, lr_patience,
-                         first_epoch_lr_scheduled, n_batches)
+                         first_epoch_lr_scheduled)
         # Class to index dict
         self.class_to_idx = class_to_idx
         self.num_classes = max(self.class_to_idx.values()) + 1
@@ -31,9 +29,6 @@ class DetectionModule(TorchVisionModule):
             if i not in class_to_idx.values():
                 na_cnt += 1
                 self.idx_to_class[i] = f'NA{"{:02}".format(na_cnt)}'
-        # Thresholds for AP validation
-        self.ap_iou_threshold = ap_iou_threshold
-        self.ap_conf_threshold = ap_conf_threshold
 
     ###### Set the model and the fine-tuning settings ######
     @property
@@ -73,7 +68,11 @@ class DetectionModule(TorchVisionModule):
     def _calc_epoch_metrics(self, preds, targets):
         """Calculate the metrics from the targets and predictions"""
         # Calculate the mean Average Precision
-        map_metric = MeanAveragePrecision(iou_type=["bbox"], class_metrics=True, extended_summary=True)
+        if self.trainer.num_devices == 1:
+            map_metric = MeanAveragePrecision(iou_type=["bbox"], class_metrics=True, extended_summary=True)
+        else:  # Avoid Runtime Error in DDP strategy (https://github.com/Lightning-AI/pytorch-lightning/issues/18803#issuecomment-2355778741)
+            map_metric = MeanAveragePrecision(iou_type=["bbox"], class_metrics=True, extended_summary=True,
+                                              compute_on_cpu=False, sync_on_compute=False, dist_sync_on_step=True)
         map_metric.update(preds, targets)
         map_score = map_metric.compute()
         self.last_preds = preds

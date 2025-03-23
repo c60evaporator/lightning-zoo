@@ -1,7 +1,7 @@
 import json
 import os
 
-from torch_extend.dataset import CocoDetectionTV
+from torch_extend.dataset import CocoDetection
 
 from .base_detection import DetectionDataModule
 
@@ -11,10 +11,12 @@ class CocoDetectionDataModule(DetectionDataModule):
                  train_annFile=None, val_annFile=None,
                  dataset_name='COCO',
                  train_transforms=None, train_transform=None, train_target_transform=None,
-                 eval_transforms=None, eval_transform=None, eval_target_transform=None):
+                 eval_transforms=None, eval_transform=None, eval_target_transform=None,
+                 out_fmt='torchvision', processor=None):
         super().__init__(batch_size, num_workers, dataset_name,
                          train_transforms, train_transform, train_target_transform,
-                         eval_transforms, eval_transform, eval_target_transform)
+                         eval_transforms, eval_transform, eval_target_transform,
+                         out_fmt, processor)
         self.root = root
         self.train_dir = train_dir
         self.val_dir = val_dir
@@ -31,23 +33,29 @@ class CocoDetectionDataModule(DetectionDataModule):
     ###### Dataset Methods ######
     def _get_datasets(self, ignore_transforms=False):
         """Dataset initialization"""
-        train_dataset = CocoDetectionTV(
+        train_dataset = CocoDetection(
             f'{self.root}/{self.train_dir}',
             annFile=self.train_annFile,
+            out_fmt=self.out_fmt,
             transforms=self._get_transforms('train', ignore_transforms),
             transform=self._get_transform('train', ignore_transforms),
+            processor=self.processor,
         )
-        val_dataset = CocoDetectionTV(
+        val_dataset = CocoDetection(
             f'{self.root}/{self.val_dir}',
-            annFile=self.val_annFile, 
+            annFile=self.val_annFile,
+            out_fmt=self.out_fmt,
             transforms=self._get_transforms('val', ignore_transforms),
             transform=self._get_transform('val', ignore_transforms),
+            processor=self.processor,
         )
-        test_dataset = CocoDetectionTV(
+        test_dataset = CocoDetection(
             f'{self.root}/{self.val_dir}',
-            annFile=self.val_annFile, 
+            annFile=self.val_annFile,
+            out_fmt=self.out_fmt,
             transforms=self._get_transforms('test', ignore_transforms),
             transform=self._get_transform('test', ignore_transforms),
+            processor=self.processor,
         )
         return train_dataset, val_dataset, test_dataset
     
@@ -93,4 +101,3 @@ class CocoDetectionDataModule(DetectionDataModule):
 
     def sample_dataset(self, image_ratio, labels):
         """Sample the dataset"""
-        

@@ -4,6 +4,7 @@ from torchvision.transforms import v2
 import albumentations as A
 import lightning.pytorch as pl
 from lightning.pytorch.loggers import CSVLogger, MLFlowLogger, TensorBoardLogger
+import os
 import yaml
 import io
 import cv2
@@ -20,7 +21,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
                  pretrained=False, tuned_layers=None,
                  opt_name='sgd', lr=None, weight_decay=None, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
                  lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
-                 first_epoch_lr_scheduled=False, n_batches=None,
+                 first_epoch_lr_scheduled=False,
                  save_first_prediction=True):
         super().__init__()
         self.model_name = model_name
@@ -88,8 +89,6 @@ class TorchVisionModule(pl.LightningModule, ABC):
         # first_epoch_lr_scheduler (https://github.com/pytorch/vision/blob/main/references/detection/engine.py)
         self.first_epoch_lr_scheduled = first_epoch_lr_scheduled
         self.first_epoch_lr_scheduler: torch.optim.lr_scheduler.LinearLR = None
-        # Set the number batches for lr_scheduler
-        self.n_batches = n_batches  # for first_epoch_lr_scheduler
         # Logging parameters
         self.save_first_prediction = save_first_prediction
 
@@ -120,7 +119,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
         return hyperparameters
     
     def _log_hyperparameters(self):
-        """Log hyperparameters"""
+        """Log hyperparameters. TODO: Will be replaced by `self.save_hyperparameters()` method"""
         hyperparameters = self._extract_hyperparameters()
         if isinstance(self.logger, CSVLogger):
             yaml.dump(hyperparameters, open(f'{self.logger.log_dir}/hyperparameters.yaml', 'w'))
@@ -206,7 +205,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
         loss = self._calc_train_loss(batch)
         # Record the loss
         self.log("train_loss", loss.item(), on_step=True, on_epoch=True, prog_bar=True, 
-                 logger=True, batch_size=len(batch[0]),
+                 logger=True, batch_size=self.trainer.datamodule.batch_size,
                  sync_dist=True if self.trainer.num_devices > 1 else False)
         self.train_step_losses.append(loss.item())
         # first_epoch_lr_scheduler
@@ -241,8 +240,8 @@ class TorchVisionModule(pl.LightningModule, ABC):
         """Convert the predictions and targets to TorchVision format"""
         return preds, targets
     
-    def _convert_images_to_torchvision(self, batch):
-        """Convert the predictions and targets to TorchVision format"""
+    def _convert_images_for_pred_to_torchvision(self, batch):
+        """Convert the images to TorchVision format that is plotted with the predictions"""
         return batch[0]
     
     @abstractmethod
@@ -256,7 +255,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
         raise NotImplementedError
 
     def validation_step(self, batch, batch_idx):
-        """Validation step (E.g., calculate the loss and store the predictions and targets)"""
+        """Validation step (e.g., calculate the loss and store the predictions and targets)"""
         # Predict
         preds, targets = self._val_predict(batch)
         # Calculate the loss
@@ -266,7 +265,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
         # Record the loss
         if loss is not None:
             self.log("val_loss", loss.item(), on_epoch=True, prog_bar=True, 
-                     logger=True, batch_size=len(targets),
+                     logger=True, batch_size=self.trainer.datamodule.batch_size,
                      sync_dist=True if self.trainer.num_devices > 1 else False)
             self.val_step_losses.append(loss.item())
         # Store the predictions and targets for calculating metrics
@@ -274,13 +273,20 @@ class TorchVisionModule(pl.LightningModule, ABC):
         self.val_batch_targets.extend(self._get_targets_cpu(targets))
         # Save the predictions of the first batch
         if self.save_first_prediction and batch_idx == 0:
-            img_torchvision = self._convert_images_to_torchvision(batch)
-            # TODO: Denormalize the images
-            figures = self._plot_predictions(img_torchvision, preds, targets)
+            # Convert the images to TorchVision format
+            imgs = self._convert_images_for_pred_to_torchvision(batch)
+            # Denormalize the images
+            imgs = [self.trainer.datamodule.denormalize_image(img, image_set='val') for img in imgs]
+            # Plot the predictions
+            figures = self._plot_predictions(imgs, preds, targets)
             for i, fig in enumerate(figures):
-                key = f'pred_img{i}'
+                if self.trainer.num_devices == 1:
+                    key = f'pred_img{i}'  # Single GPU
+                else:
+                    key = f'pred_img{i}_device{self.global_rank}'  # Multiple GPUs
                 if isinstance(self.logger, CSVLogger):
-                    fig.savefig(f'{self.logger.log_dir}/pred_img/{key}.png')
+                    os.makedirs(f'{self.logger.log_dir}/pred_img', exist_ok=True)
+                    fig.savefig(f'{self.logger.log_dir}/pred_img/{key}_epoch{self.current_epoch}.png')
                 if isinstance(self.logger, MLFlowLogger):
                     # Matplotlib figure to numpy array
                     img_byte_arr = io.BytesIO()
@@ -339,8 +345,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
     def predict_step(self, batch):
         inputs, target = batch
         return self.model(inputs, target)
-    
-    ##### Optimizers and Schedulers ######
+
     def _extract_optimizer_params(self):
         """Extract the parameters for the optimizer"""
         return [p for p in self.model.parameters() if p.requires_grad]
@@ -398,8 +403,10 @@ class TorchVisionModule(pl.LightningModule, ABC):
         
         # first_epoch_lr_scheduler (https://github.com/pytorch/vision/blob/main/references/detection/engine.py)
         if self.first_epoch_lr_scheduled:
+            self.trainer.fit_loop.setup_data()  # Get train_dataloader (https://github.com/Lightning-AI/pytorch-lightning/issues/10430#issuecomment-1487753339)
+            n_batches = len(self.trainer.train_dataloader)
             warmup_factor = 1.0 / 1000
-            warmup_iters = min(1000, self.n_batches - 1) if self.n_batches is not None else 1000
+            warmup_iters = min(1000, n_batches - 1) if n_batches is not None else 1000
             self.first_epoch_lr_scheduler = torch.optim.lr_scheduler.LinearLR(
                 optimizer, start_factor=warmup_factor, total_iters=warmup_iters
             )

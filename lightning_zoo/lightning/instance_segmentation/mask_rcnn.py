@@ -8,14 +8,14 @@ class MaskRCNNModule(InstanceSegModule):
                  pretrained=True, tuned_layers=None,
                  opt_name='sgd', lr=None, weight_decay=None, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
                  lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
-                 first_epoch_lr_scheduled=False,
+                 semantic_metrics_score_threshold=0.2,
                  model_weight='maskrcnn_resnet50_fpn'):
         super().__init__(class_to_idx,
                          'maskrcnn',
                          criterion, pretrained, tuned_layers,
                          opt_name, lr, weight_decay, momentum, rmsprop_alpha, eps, adam_betas,
                          lr_scheduler, lr_step_size, lr_steps, lr_gamma, lr_T_max, lr_patience,
-                         first_epoch_lr_scheduled)
+                         semantic_metrics_score_threshold)
         self.model_weight = model_weight
         self.model: mask_rcnn.MaskRCNN
         # Save hyperparameters

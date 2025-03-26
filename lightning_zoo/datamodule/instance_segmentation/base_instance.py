@@ -25,8 +25,6 @@ class InstanceSegDataModule(TorchVisionDataModule):
                          out_fmt, processor)
         self.class_to_idx = None
         self.idx_to_class = None
-        # Whether to use the collate function if the image sizes are the same
-        self.use_collate_fn_if_same_img_size = True
 
     ###### Dataset Methods ######
     def collate_fn_same_img_size(self, batch):
@@ -53,7 +51,7 @@ class InstanceSegDataModule(TorchVisionDataModule):
             # Pad the images and masks
             segmentation_maps = [item['segmentation_maps'] for item in batch]
             instance_id_to_semantic_id = [item['instance_id_to_semantic_id'] for item in batch]
-            encoding = self.processor.encode_inputs(images, segmentation_maps, 
+            encoding = self.processor.encode_inputs(images, segmentation_maps,
                                                     instance_id_to_semantic_id,
                                                     return_tensors="pt")
             return {"pixel_values": encoding['pixel_values'],
@@ -63,6 +61,9 @@ class InstanceSegDataModule(TorchVisionDataModule):
     
     def _setup(self):
         self.train_dataset, self.val_dataset, self.test_dataset = self._get_datasets()
+        # Set the background and the border index
+        self.bg_idx = self.train_dataset.bg_idx if hasattr(self.train_dataset, 'bg_idx') else 0
+        self.border_idx = self.train_dataset.border_idx if hasattr(self.train_dataset, 'border_idx') else 255
         # Class to index dict
         if 'class_to_idx' in vars(self.train_dataset):
             self.class_to_idx = self.train_dataset.class_to_idx
@@ -89,6 +90,7 @@ class InstanceSegDataModule(TorchVisionDataModule):
         show_instance_masks(img, masks=masks, boxes=boxes,
                             border_mask=target['border_mask'] if 'border_mask' in target else None,
                             labels=labels,
+                            bg_idx=self.bg_idx, border_idx=self.border_idx,
                             idx_to_class=self.idx_to_class, ax=ax)
         
     def _convert_batch_to_torchvision(self, batch):

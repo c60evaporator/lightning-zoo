@@ -30,6 +30,7 @@ LR_T_MAX = EPOCHS  # For CosineAnnealingLR
 LR_PATIENCE = 10  # For ReduceLROnPlateau
 # Model Parameters
 MODEL_WEIGHT = 'maskrcnn_resnet50_fpn'
+SEMANTIC_METRICS_SCORE_THRESHOLD = 0.2
 
 # Select the device
 DEVICE = 'cuda'
@@ -87,6 +88,7 @@ model = MaskRCNNModule(class_to_idx=datamodule.class_to_idx,
                        rmsprop_alpha=RMSPROP_ALPHA, adam_betas=ADAM_BETAS, eps=EPS,
                        lr_scheduler=LR_SCHEDULER, lr_gamma=LR_GAMMA, 
                        lr_step_size=LR_STEP_SIZE, lr_steps=LR_STEPS, lr_T_max=LR_T_MAX, lr_patience=LR_PATIENCE,
+                       semantic_metrics_score_threshold=SEMANTIC_METRICS_SCORE_THRESHOLD,
                        model_weight=MODEL_WEIGHT)
 
 # %% Training

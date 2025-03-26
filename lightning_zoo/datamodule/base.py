@@ -1,6 +1,7 @@
 from lightning.pytorch import LightningDataModule
 import albumentations as A
 from transformers import BaseImageProcessor
+import torch
 from torchvision.transforms import v2
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import RandomSampler
@@ -44,19 +45,19 @@ class TorchVisionDataModule(LightningDataModule, ABC):
         # Output format ("torchvision" or "transformers")
         self.out_fmt = out_fmt
         # Processor (For Transformers models)
-        if processor is None:
-            self.processor: BaseImageProcessor = self.default_processor
-        else:
-            if not isinstance(processor, BaseImageProcessor):
+        if self.out_fmt == 'transformers':
+            if processor is None:
+                raise ValueError('The `processor` argument should be specified when the `out_fmt` is "transformers"')
+            elif not isinstance(processor, BaseImageProcessor):
                 raise ValueError('The `processor` argument should be an instance of Transformers image processor')
-            self.processor: BaseImageProcessor = processor
+        if self.out_fmt == 'torchvision' and processor is not None:
+            print('The `processor` argument is ignored because the `out_fmt` is "torchvision"')
+        self.processor: BaseImageProcessor = processor
         # Check whether all the image sizes are the same during training
         train_image_transform = self.train_transforms if self.train_transforms is not None else self.train_transform
         eval_image_transform = self.eval_transforms if self.eval_transforms is not None else self.eval_transform
         self.same_img_size_train = validate_same_img_size(train_image_transform, self.processor)
         self.same_img_size_eval = validate_same_img_size(eval_image_transform, self.processor)
-        # Whether to use the collate function if the image sizes are the same
-        self.use_collate_fn_if_same_img_size = False
         # Other
         self.train_dataset = None
         self.val_dataset = None
@@ -65,7 +66,7 @@ class TorchVisionDataModule(LightningDataModule, ABC):
     ###### Dataset Methods ######
     def collate_fn_same_img_size(self, batch):
         """Collate function for the dataloader when the image sizes are the same"""
-        return None
+        return torch.stack([item[0] for item in batch]), torch.stack([item[1] for item in batch])
     
     def collate_fn_different_img_size(self, batch):
         """Collate function for the dataloader when the image sizes are not the same"""
@@ -111,7 +112,7 @@ class TorchVisionDataModule(LightningDataModule, ABC):
     def train_dataloader(self) -> list[str]:
         """Create train dataloader"""
         if self.same_img_size_train:
-            collate_fn = self.collate_fn_same_img_size if self.use_collate_fn_if_same_img_size else None
+            collate_fn = self.collate_fn_same_img_size
         else:
             collate_fn = self.collate_fn_different_img_size
         return DataLoader(self.train_dataset, batch_size=self.batch_size, 
@@ -121,7 +122,7 @@ class TorchVisionDataModule(LightningDataModule, ABC):
     def val_dataloader(self) -> list[str]:
         """Create validation dataloader"""
         if self.same_img_size_eval:
-            collate_fn = self.collate_fn_same_img_size if self.use_collate_fn_if_same_img_size else None
+            collate_fn = self.collate_fn_same_img_size
         else:
             collate_fn = self.collate_fn_different_img_size
         return DataLoader(self.val_dataset, batch_size=self.batch_size, 
@@ -131,7 +132,7 @@ class TorchVisionDataModule(LightningDataModule, ABC):
     def test_dataloader(self) -> list[str]:
         """Create test dataloader"""
         if self.same_img_size_eval:
-            collate_fn = self.collate_fn_same_img_size if self.collate_fn_same_img_size() is not None else None
+            collate_fn = self.collate_fn_same_img_size
         else:
             collate_fn = self.collate_fn_different_img_size
         return DataLoader(self.test_dataset, batch_size=self.batch_size, 
@@ -169,7 +170,7 @@ class TorchVisionDataModule(LightningDataModule, ABC):
     
     def _convert_batch_to_torchvision(self, batch):
         """Convert the batch to the torchvision format images and targets"""
-        return batch[0], batch[1]
+        return batch
 
     def show_first_minibatch(self, image_set='train'):
         # Check whether all the image sizes are the same

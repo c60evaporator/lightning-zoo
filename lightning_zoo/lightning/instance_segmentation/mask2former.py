@@ -13,7 +13,7 @@ class Mask2FormerModule(InstanceSegModule):
                  pretrained=True, tuned_layers=None,
                  opt_name='adamw', lr=2e-5, weight_decay=1e-4, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
                  lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
-                 first_epoch_lr_scheduled=False,
+                 semantic_metrics_score_threshold=0.2,
                  model_weight='facebook/mask2former-swin-small-coco-instance', no_object_weight=0.1, dice_weight=5.0, class_weight=2.0, mask_weight=5.0,
                  post_process_score_threshold=0.1):
         super().__init__(class_to_idx,
@@ -21,7 +21,7 @@ class Mask2FormerModule(InstanceSegModule):
                          criterion, pretrained, tuned_layers,
                          opt_name, lr, weight_decay, momentum, rmsprop_alpha, eps, adam_betas,
                          lr_scheduler, lr_step_size, lr_steps, lr_gamma, lr_T_max, lr_patience,
-                         first_epoch_lr_scheduled)
+                         semantic_metrics_score_threshold)
         self.model_weight = model_weight
         self.model: Mask2FormerForUniversalSegmentation
         # Model parameters
@@ -35,11 +35,16 @@ class Mask2FormerModule(InstanceSegModule):
 
     ###### Set the model and the fine-tuning settings ######
     def _get_model(self):
-        """Load FasterRCNN model based on the `model_weight`"""
+        """Load Mask2Former model based on the `model_weight`"""
         if self.pretrained:
+            # Add the background index (0) if the labels are not reduced
+            if 0 not in self.idx_to_class.values():
+                id2label = {0: 'background', **self.idx_to_class}
+            else:
+                id2label = self.idx_to_class
             model = Mask2FormerForUniversalSegmentation.from_pretrained(
                 self.model_weight,
-                id2label=self.idx_to_class,
+                id2label=id2label,
                 ignore_mismatched_sizes=True,
                 no_object_weight=self.no_object_weight,
                 dice_weight=self.dice_weight,
@@ -47,7 +52,7 @@ class Mask2FormerModule(InstanceSegModule):
                 mask_weight=self.mask_weight)
         else:
             config = Mask2FormerConfig(use_pretrained_backbone=False,
-                                       id2label=self.idx_to_class)
+                                       id2label=id2label)
             model = Mask2FormerForUniversalSegmentation(config)
         return model
 

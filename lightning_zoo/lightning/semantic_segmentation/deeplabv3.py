@@ -4,19 +4,17 @@ from torch import nn
 from .base_semantic import SemanticSegModule
 
 class DeepLabV3Module(SemanticSegModule):
-    def __init__(self, class_to_idx, border_idx,
+    def __init__(self, class_to_idx,
                  criterion=None,
                  pretrained=True, tuned_layers=None,
                  opt_name='sgd', lr=None, weight_decay=None, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
                  lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
-                 first_epoch_lr_scheduled=False,
                  model_weight='deeplabv3_resnet50'):
-        super().__init__(class_to_idx, border_idx,
+        super().__init__(class_to_idx,
                          'deeplabv3',
                          criterion, pretrained, tuned_layers,
                          opt_name, lr, weight_decay, momentum, rmsprop_alpha, eps, adam_betas,
-                         lr_scheduler, lr_step_size, lr_steps, lr_gamma, lr_T_max, lr_patience,
-                         first_epoch_lr_scheduled)
+                         lr_scheduler, lr_step_size, lr_steps, lr_gamma, lr_T_max, lr_patience)
         self.model_weight = model_weight
         self.model: deeplabv3.DeepLabV3
         # Save hyperparameters
@@ -51,7 +49,7 @@ class DeepLabV3Module(SemanticSegModule):
         """Default criterion (Sum of cross entropy of out and aux outputs)"""
         losses = {}
         for name, x in outputs.items():
-            losses[name] = nn.functional.cross_entropy(x, targets, ignore_index=self.border_idx)
+            losses[name] = nn.functional.cross_entropy(x, targets, ignore_index=self.trainer.datamodule.border_idx)
         if len(losses) == 1:
             return losses["out"]
         return losses["out"] + 0.5 * losses["aux"]

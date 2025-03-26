@@ -10,27 +10,25 @@ from torch_extend.display.semantic_segmentation import show_predicted_segmentati
 from ..base import TorchVisionModule
 
 class SemanticSegModule(TorchVisionModule):
-    def __init__(self, class_to_idx: dict[str, int], border_idx,
+    def __init__(self, class_to_idx: dict[str, int],
                  model_name, criterion=None,
                  pretrained=True, tuned_layers=None,
                  opt_name='sgd', lr=None, weight_decay=None, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
-                 lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
-                 first_epoch_lr_scheduled=False):
+                 lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None):
         super().__init__(model_name, criterion, pretrained, tuned_layers,
                          opt_name, lr, weight_decay, momentum, rmsprop_alpha, eps, adam_betas,
                          lr_scheduler, lr_step_size, lr_steps, lr_gamma, lr_T_max, lr_patience,
-                         first_epoch_lr_scheduled)
-        # Class to index dict
-        self.class_to_idx = class_to_idx
-        self.border_idx = border_idx  # Border index that is ignored in the evaluation
-        self.num_classes = max(self.class_to_idx.values()) + 1
+                         False)
         # Index to class dict
-        self.idx_to_class = {v: k for k, v in self.class_to_idx.items()}
+        self.idx_to_class = {v: k for k, v in class_to_idx.items()}
         na_cnt = 0
         for i in range(max(class_to_idx.values())):
             if i not in class_to_idx.values():
                 na_cnt += 1
                 self.idx_to_class[i] = f'NA{"{:02}".format(na_cnt)}'
+        # Class to index dict
+        self.class_to_idx = {v: k for k, v in self.idx_to_class.items()}
+        self.num_classes = max(self.class_to_idx.values()) + 1
 
     ###### Set the model and the fine-tuning settings ######
     @property
@@ -68,10 +66,11 @@ class SemanticSegModule(TorchVisionModule):
     
     def _get_preds_cpu(self, preds):
         """Get the predictions and store them to CPU as a list"""
+        # Raw logits data uses too much memory, so only store the predicted labels
         if isinstance(preds, torch.Tensor):  # Batch images of torch.Tensor
-            return [pred for pred in preds.cpu()]
+            return [pred.argmax(0) for pred in preds.cpu()]
         elif isinstance(preds, tuple):  # Tuple images by collate_fn
-            return [pred.cpu() for pred in preds]
+            return [pred.argmax(0).cpu() for pred in preds]
     
     def _get_targets_cpu(self, targets):
         """Get the targets and store them to CPU as a list"""
@@ -80,25 +79,35 @@ class SemanticSegModule(TorchVisionModule):
     def _calc_epoch_metrics(self, preds, targets):
         """Calculate the metrics from the targets and predictions"""
         # Calculate the mean Average Precision
-        tps, fps, fns, ious = segmentation_ious(preds, targets, self.idx_to_class, self.border_idx)
-        mean_iou = np.mean(ious)
+        tps, fps, fns, mean_ious, label_indices, confmat = segmentation_ious(
+            preds, targets, self.idx_to_class, pred_type='label',
+            bg_idx=self.trainer.datamodule.bg_idx, 
+            border_idx=self.trainer.datamodule.border_idx
+        )
+        mean_iou = np.mean(mean_ious)
         self.ious = {
-            k: {
-                'label_name': v,
-                'tp': tps[i],
-                'fp': fps[i],
-                'fn': fns[i],
-                'iou': ious[i]
-            }
-            for i, (k, v) in enumerate(self.idx_to_class.items())
+            'per_class': {
+                label: {
+                    'label_index': label,
+                    'label_name': self.idx_to_class[label] if label in self.idx_to_class.keys() else 'background' if label == self.trainer.datamodule.bg_idx else 'unknown',
+                    'tps': tps[i],
+                    'fps': fps[i],
+                    'fns': fns[i],
+                    'iou': mean_ious[i],
+                }
+                for i, label in enumerate(label_indices)
+            },
+            'confmat': confmat
         }
         return {'mean_iou': mean_iou}
     
     ##### Display ######
-    def _plot_predictions(self, images, preds, targets, n_images=10) -> list[Figure]:
-        """Plot the images with predictions and ground truths TODO: bg_idx should be from the datamodule (Trainer)"""
+    def _plot_predictions(self, images, preds, targets, n_images=4) -> list[Figure]:
+        """Plot the images with predictions and ground truths"""
         figures = show_predicted_segmentations(images, preds, targets, self.idx_to_class,
-                                               bg_idx=0, border_idx=self.border_idx, plot_raw_image=True,
+                                               bg_idx=self.trainer.datamodule.bg_idx, 
+                                               border_idx=self.trainer.datamodule.border_idx,
+                                               plot_raw_image=True,
                                                max_displayed_images=n_images)
         return figures
         

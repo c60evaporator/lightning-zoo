@@ -10,13 +10,13 @@ sys.path.append(ROOT)
 
 # General Parameters
 EPOCHS = 6
-BATCH_SIZE = 32  # Effective Batch Size. 
+BATCH_SIZE = 16  # Effective Batch Size. 
 NUM_WORKERS = 2  # 2 * Number of devices (GPUs) is appropriate in general, but this number doesn't matter in Object Detection.
 DATA_ROOT = '../detection/datasets/VOC2012'
 # Optimizer Parameters
-OPT_NAME = 'sgd'
-LR = 0.005  # Effective Learning Rate (https://lightning.ai/forums/t/effective-learning-rate-and-batch-size-with-lightning-in-ddp/101/2)
-WEIGHT_DECAY = 0.0005
+OPT_NAME = 'adamw'
+LR = 1e-4  # Effective Learning Rate (https://lightning.ai/forums/t/effective-learning-rate-and-batch-size-with-lightning-in-ddp/101/2)
+WEIGHT_DECAY = 0
 MOMENTUM = 0.9  # For SGD and RMSprop
 RMSPROP_ALPHA = 0.99  # For RMSprop
 EPS = 1e-8  # For RMSprop, Adam, and AdamW
@@ -29,7 +29,7 @@ LR_STEPS = [16, 24]  # For MultiStepLR
 LR_T_MAX = EPOCHS  # For CosineAnnealingLR
 LR_PATIENCE = 10  # For ReduceLROnPlateau
 # Model Parameters
-MODEL_WEIGHT = 'deeplabv3_resnet50'
+MODEL_WEIGHT = 'nvidia/mit-b0'
 
 # Select the device
 DEVICE = 'cuda'
@@ -48,29 +48,26 @@ NUM_GPU = 1
 ###### 2. Define the dataset (DataModule) ######
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+from transformers import SegformerImageProcessor
 
 from lightning_zoo.datamodule.semantic_segmentation.voc import VOCSemanticSegDataModule
 
-# ImageNet Normalization parameters
-IMAGENET_MEAN = [0.485, 0.456, 0.406]
-IMAGENET_STD = [0.229, 0.224, 0.225]
+REDUCE_LABELS = False
+# Image Processor (https://huggingface.co/docs/transformers/model_doc/segformer#transformers.SegformerImageProcessor)
+image_processor = SegformerImageProcessor(reduce_labels=REDUCE_LABELS)
+
 # Transforms for training
 train_transform = A.Compose([
-    A.Resize(520, 520),
-    A.Normalize(IMAGENET_MEAN, IMAGENET_STD),  # ImageNet Normalization
-    ToTensorV2(),  # Convert from numpy.ndarray to torch.Tensor
 ])
 # Transforms for validation and test
 eval_transform = A.Compose([
-    A.Resize(520, 520),
-    A.Normalize(IMAGENET_MEAN, IMAGENET_STD),  # ImageNet Normalization
-    ToTensorV2()  # Convert from numpy.ndarray to torch.Tensor
 ])
 
 # Datamodule
 datamodule = VOCSemanticSegDataModule(batch_size=int(BATCH_SIZE/NUM_GPU), num_workers=NUM_WORKERS, root=DATA_ROOT,
                                       dataset_name='VOC2012SemanticSeg',
-                                      train_transforms=train_transform, eval_transforms=eval_transform)
+                                      train_transforms=train_transform, eval_transforms=eval_transform,
+                                      out_fmt='transformers', processor=image_processor)
 datamodule.prepare_data()
 datamodule.setup()
 
@@ -82,9 +79,9 @@ datamodule.show_first_minibatch(image_set='train')
 
 # %% Create PyTorch Lightning module
 ###### 3. Define the model (LightningModule) ######
-from lightning_zoo.lightning.semantic_segmentation.deeplabv3 import DeepLabV3Module
+from lightning_zoo.lightning.semantic_segmentation.segformer import SegformerModule
 
-model = DeepLabV3Module(class_to_idx=datamodule.class_to_idx,
+model = SegformerModule(class_to_idx=datamodule.class_to_idx,
                         opt_name=OPT_NAME, lr=LR*NUM_GPU, momentum=MOMENTUM, weight_decay=WEIGHT_DECAY,
                         rmsprop_alpha=RMSPROP_ALPHA, adam_betas=ADAM_BETAS, eps=EPS,
                         lr_scheduler=LR_SCHEDULER, lr_gamma=LR_GAMMA, 

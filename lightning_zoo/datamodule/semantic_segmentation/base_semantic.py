@@ -9,7 +9,7 @@ import os
 from abc import abstractmethod
 
 from torch_extend.display.semantic_segmentation import show_segmentations
-from torch_extend.validate.common import validate_same_img_size
+from torch_extend.data_converter.semantic_segmentation import convert_batch_to_torchvision
 
 from ..base import TorchVisionDataModule
 
@@ -39,20 +39,40 @@ class SemanticSegDataModule(TorchVisionDataModule):
                  dataset_name,
                  train_transforms=None, train_transform=None, train_target_transform=None,
                  eval_transforms=None, eval_transform=None, eval_target_transform=None,
-                 out_fmt='torchvision', processor=None,
-                 border_idx=None, bg_idx=0):
+                 out_fmt='torchvision', processor=None):
         super().__init__(batch_size, num_workers, dataset_name,
                          train_transforms, train_transform, train_target_transform,
                          eval_transforms, eval_transform, eval_target_transform,
                          out_fmt, processor)
         self.class_to_idx = None
         self.idx_to_class = None
-        self.border_idx = border_idx
-        self.bg_idx = bg_idx
     
-    ###### Dataset Methods ######    
+    ###### Dataset Methods ######
+    def collate_fn_same_img_size(self, batch):
+        """Collate function for the dataloader when the image sizes are the same"""
+        # Convert the batch to the torchvision format
+        if self.out_fmt == 'torchvision':
+            return torch.stack([item[0] for item in batch]), torch.stack([item[1] for item in batch])
+        # Convert the batch to the transformers (SegFormer) format
+        elif self.out_fmt == 'transformers':
+            pixel_values = torch.stack([item['pixel_values'] for item in batch])
+            labels = torch.stack([item['labels'] for item in batch])
+            return {"pixel_values": pixel_values, "labels": labels}
+        
+    def collate_fn_different_img_size(self, batch):
+        """Collate function for the dataloader when the image sizes are not the same"""
+        # Convert the batch to the torchvision format
+        if self.out_fmt == 'torchvision':
+            return tuple(zip(*batch))
+        # Convert the batch to the transformers (SegFormer) format
+        elif self.out_fmt == 'transformers':
+            raise ValueError('The image sizes should be the same for the transformers (SegFormer) format.')
+    
     def _setup(self):
         self.train_dataset, self.val_dataset, self.test_dataset = self._get_datasets()
+        # Set the background and the border index
+        self.bg_idx = self.train_dataset.bg_idx if hasattr(self.train_dataset, 'bg_idx') else 0
+        self.border_idx = self.train_dataset.border_idx if hasattr(self.train_dataset, 'border_idx') else 255
         # Class to index dict
         if 'class_to_idx' in vars(self.train_dataset):
             self.class_to_idx = self.train_dataset.class_to_idx
@@ -68,14 +88,6 @@ class SemanticSegDataModule(TorchVisionDataModule):
                 if i not in self.class_to_idx.values():
                     na_cnt += 1
                     self.idx_to_class[i] = f'NA{"{:02}".format(na_cnt)}'
-        # Same image size validation
-        if not validate_same_img_size(self.train_transforms) and not validate_same_img_size(self.train_transform):
-            raise ValueError('The image size should be the same after the transforms for batch training. Please add `Resize` or `Crop` to `train_transforms` or `train_transform`.')
-        self.same_img_size_train = True
-        if validate_same_img_size(self.train_transform) or validate_same_img_size(self.train_transforms):
-            self.same_img_size_eval = True
-        else:
-            self.same_img_size_eval = False
     
     ###### Display methods ######
     def _show_image_and_target(self, img, target, image_set='train', denormalize=True, ax=None, anomaly_indices=None):
@@ -85,6 +97,13 @@ class SemanticSegDataModule(TorchVisionDataModule):
         img = (img*255).to(torch.uint8)  # Change from float[0, 1] to uint[0, 255]
         # Show the image with the target mask
         show_segmentations(img, target, self.idx_to_class, bg_idx=self.bg_idx, border_idx=self.border_idx)
+
+    def _convert_batch_to_torchvision(self, batch):
+        """Convert the batch to the torchvision format images and targets"""
+        if self.out_fmt == 'torchvision':
+            return batch
+        elif self.out_fmt == 'transformers':
+            return convert_batch_to_torchvision(batch, in_fmt='transformers')
 
     ###### Validation methods ######
     @abstractmethod

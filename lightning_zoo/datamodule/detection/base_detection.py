@@ -47,8 +47,6 @@ class DetectionDataModule(TorchVisionDataModule):
                          out_fmt, processor)
         self.class_to_idx = None
         self.idx_to_class = None
-        # Whether to use the collate function if the image sizes are the same
-        self.use_collate_fn_if_same_img_size = True
     
     ###### Dataset Methods ######        
     def collate_fn_same_img_size(self, batch):

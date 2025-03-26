@@ -36,6 +36,7 @@ DICE_WEIGHT = 5.0
 CLASS_WEIGHT = 2.0
 MASK_WEIGHT = 5.0
 POST_PROCESS_SCORE_THRESHOLD = 0.1
+SEMANTIC_METRICS_SCORE_THRESHOLD = 0.2
 
 # Select the device
 DEVICE = 'cuda'
@@ -58,7 +59,7 @@ from transformers import Mask2FormerImageProcessor
 
 from lightning_zoo.datamodule.instance_segmentation.voc import VOCInstanceSegDataModule
 
-REDUCE_LABELS = False
+REDUCE_LABELS = True
 # Image Processor (https://huggingface.co/docs/transformers/preprocessing#computer-vision)
 image_processor = Mask2FormerImageProcessor.from_pretrained(MODEL_WEIGHT, do_reduce_labels=REDUCE_LABELS,
                                                             ignore_index=255 if REDUCE_LABELS else 0)
@@ -95,6 +96,7 @@ model = Mask2FormerModule(class_to_idx=datamodule.class_to_idx,
                           rmsprop_alpha=RMSPROP_ALPHA, adam_betas=ADAM_BETAS, eps=EPS,
                           lr_scheduler=LR_SCHEDULER, lr_gamma=LR_GAMMA, 
                           lr_step_size=LR_STEP_SIZE, lr_steps=LR_STEPS, lr_T_max=LR_T_MAX, lr_patience=LR_PATIENCE,
+                          semantic_metrics_score_threshold=SEMANTIC_METRICS_SCORE_THRESHOLD,
                           model_weight=MODEL_WEIGHT, no_object_weight=NO_OBJECT_WEIGHT, dice_weight=DICE_WEIGHT,
                           class_weight=CLASS_WEIGHT, mask_weight=MASK_WEIGHT,
                           post_process_score_threshold=POST_PROCESS_SCORE_THRESHOLD)

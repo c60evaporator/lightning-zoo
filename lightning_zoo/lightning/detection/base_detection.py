@@ -19,16 +19,16 @@ class DetectionModule(TorchVisionModule):
                          opt_name, lr, weight_decay, momentum, rmsprop_alpha, eps, adam_betas,
                          lr_scheduler, lr_step_size, lr_steps, lr_gamma, lr_T_max, lr_patience,
                          first_epoch_lr_scheduled)
-        # Class to index dict
-        self.class_to_idx = class_to_idx
-        self.num_classes = max(self.class_to_idx.values()) + 1
         # Index to class dict
-        self.idx_to_class = {v: k for k, v in self.class_to_idx.items()}
+        self.idx_to_class = {v: k for k, v in class_to_idx.items()}
         na_cnt = 0
         for i in range(max(class_to_idx.values())):
             if i not in class_to_idx.values():
                 na_cnt += 1
                 self.idx_to_class[i] = f'NA{"{:02}".format(na_cnt)}'
+        # Class to index dict
+        self.class_to_idx = {v: k for k, v in self.idx_to_class.items()}
+        self.num_classes = max(self.class_to_idx.values()) + 1
 
     ###### Set the model and the fine-tuning settings ######
     @property

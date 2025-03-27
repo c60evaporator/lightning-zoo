@@ -82,7 +82,8 @@ class SemanticSegModule(TorchVisionModule):
         tps, fps, fns, mean_ious, label_indices, confmat = segmentation_ious(
             preds, targets, self.idx_to_class, pred_type='label',
             bg_idx=self.trainer.datamodule.bg_idx, 
-            border_idx=self.trainer.datamodule.border_idx
+            border_idx=self.trainer.datamodule.border_idx,
+            confmat_calc_platform='torch'
         )
         mean_iou = np.mean(mean_ious)
         self.ious = {

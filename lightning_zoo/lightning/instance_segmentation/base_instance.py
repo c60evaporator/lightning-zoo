@@ -93,7 +93,8 @@ class InstanceSegModule(TorchVisionModule):
             preds, targets, self.idx_to_class, 
             bg_idx=self.trainer.datamodule.bg_idx, 
             border_idx=self.trainer.datamodule.border_idx,
-            score_threshold=self.semantic_metrics_score_threshold
+            score_threshold=self.semantic_metrics_score_threshold,
+            confmat_calc_platform='torch'
         )
         semantic_mean_iou = np.mean(mean_ious)
         self.last_ious = {

@@ -74,8 +74,9 @@ class InstanceSegDataModule(TorchVisionDataModule):
             self.idx_to_class = self.train_dataset.idx_to_class
         else:
             self.idx_to_class = {v: k for k, v in self.class_to_idx.items()}
+            # Fill the missing indexes
             na_cnt = 0
-            for i in range(max(self.class_to_idx.values())):
+            for i in range(1, max(self.idx_to_class.keys())):  # 0 is reserved for background
                 if i not in self.class_to_idx.values():
                     na_cnt += 1
                     self.idx_to_class[i] = f'NA{"{:02}".format(na_cnt)}'

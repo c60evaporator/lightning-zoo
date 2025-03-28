@@ -24,8 +24,9 @@ class InstanceSegModule(TorchVisionModule):
         self.semantic_metrics_score_threshold = semantic_metrics_score_threshold
         # Index to class dict
         self.idx_to_class = {v: k for k, v in class_to_idx.items()}
+        # Fill the missing indexes
         na_cnt = 0
-        for i in range(max(class_to_idx.values())):
+        for i in range(1, max(self.idx_to_class.keys())):  # 0 is reserved for background
             if i not in class_to_idx.values():
                 na_cnt += 1
                 self.idx_to_class[i] = f'NA{"{:02}".format(na_cnt)}'

@@ -13,6 +13,7 @@ import inspect
 
 from abc import ABC, abstractmethod
 from torch_extend.validate.common import validate_same_img_size
+from torch_extend.data_converter.common import denormalize_image
 
 class TorchVisionDataModule(LightningDataModule, ABC):
     def __init__(self, batch_size, num_workers,
@@ -142,25 +143,11 @@ class TorchVisionDataModule(LightningDataModule, ABC):
     ###### Display methods ######
     def denormalize_image(self, img, image_set='train'):
         """Denormalize the image for showing it"""
-        # Denormalization based on the TorchVision/Albumentation transforms
         if image_set == 'train':
             image_transform = self.train_transforms if self.train_transforms is not None else self.train_transform
         elif image_set == 'val' or image_set == 'test':
             image_transform = self.eval_transforms if self.eval_transforms is not None else self.eval_transform
-        for tr in image_transform.transforms:
-            if isinstance(tr, v2.Normalize) or isinstance(tr, A.Normalize):
-                denormalize_transform = v2.Compose([
-                    v2.Normalize(mean=[-mean/std for mean, std in zip(tr.mean, tr.std)],
-                                        std=[1/std for std in tr.std])
-                ])
-                img = denormalize_transform(img)
-        # Denormalization based on the processor of Transformers
-        if self.processor is not None and self.processor.do_normalize:
-            denormalize_transform = v2.Compose([
-                v2.Normalize(mean=[-mean/std for mean, std in zip(self.processor.image_mean, self.processor.image_std)],
-                            std=[1/std for std in self.processor.image_std])
-            ])
-            img = denormalize_transform(img)
+        img = denormalize_image(img, image_transform, self.processor)
         return img
     
     @abstractmethod

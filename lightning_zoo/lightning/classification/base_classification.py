@@ -14,11 +14,13 @@ class ClassificationModule(TorchVisionModule):
                  model_name, criterion=None,
                  pretrained=True, tuned_layers=None,
                  opt_name='sgd', lr=None, weight_decay=None, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
-                 lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None):
+                 lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
+                 save_first_prediction=True, num_saved_predictions=4):
         super().__init__(model_name, criterion, pretrained, tuned_layers,
                          opt_name, lr, weight_decay, momentum, rmsprop_alpha, eps, adam_betas,
                          lr_scheduler, lr_step_size, lr_steps, lr_gamma, lr_T_max, lr_patience,
-                         False, None)
+                         save_first_prediction, num_saved_predictions,
+                         False)
         # Class to index dict
         self.class_to_idx = class_to_idx
         self.num_classes = max(self.class_to_idx.values()) + 1

@@ -21,8 +21,8 @@ class TorchVisionModule(pl.LightningModule, ABC):
                  pretrained=False, tuned_layers=None,
                  opt_name='sgd', lr=None, weight_decay=None, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
                  lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
-                 first_epoch_lr_scheduled=False,
-                 save_first_prediction=True):
+                 save_first_prediction=True, num_saved_predictions=4,
+                 first_epoch_lr_scheduled=False):
         super().__init__()
         self.model_name = model_name
         # Save the criterion
@@ -91,6 +91,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
         self.first_epoch_lr_scheduler: torch.optim.lr_scheduler.LinearLR = None
         # Logging parameters
         self.save_first_prediction = save_first_prediction
+        self.num_saved_predictions = num_saved_predictions
 
         # Other
         self.model = None
@@ -223,7 +224,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
         self.first_epoch_lr_scheduler = None
         # LR Scheduler is automatically called by PyTorch Lightning because `interval` is "epoch" (See https://lightning.ai/docs/pytorch/stable/common/optimization.html#learning-rate-scheduling)
 
-        print(f'Epoch {self.current_epoch}{" device" + str(self.global_rank) if self.trainer.num_devices > 1 else ""}: finished! train_loss={epoch_train_loss}, elapsed_time={time.time()-self.start_time:.2f} sec')
+        print(f'Epoch {self.current_epoch+1}{" device" + str(self.global_rank) if self.trainer.num_devices > 1 else ""}: finished! train_loss={epoch_train_loss}, elapsed_time={time.time()-self.start_time:.2f} sec')
     
     ###### Validation ######
     @abstractmethod
@@ -280,6 +281,8 @@ class TorchVisionModule(pl.LightningModule, ABC):
             # Plot the predictions
             figures = self._plot_predictions(imgs, preds, targets)
             for i, fig in enumerate(figures):
+                if i >= self.num_saved_predictions:
+                    break
                 if self.trainer.num_devices == 1:
                     key = f'pred_img{i}'  # Single GPU
                 else:
@@ -293,7 +296,8 @@ class TorchVisionModule(pl.LightningModule, ABC):
                     fig.savefig(img_byte_arr, format='png')
                     img_byte_arr = cv2.imdecode(np.frombuffer(img_byte_arr.getvalue(), np.uint8), 1)
                     img_byte_arr = img_byte_arr[:,:,::-1] # BGR->RGB
-                    self.logger.experiment.log_image(img_byte_arr, key=key, step=self.current_epoch)
+                    self.logger.experiment.log_image(run_id=self.logger.run_id, image=img_byte_arr,
+                                                     key=key, step=self.current_epoch)
                 
 
     @abstractmethod
@@ -308,10 +312,10 @@ class TorchVisionModule(pl.LightningModule, ABC):
             epoch_val_loss = sum(self.val_step_losses) / len(self.val_step_losses)
             self.val_epoch_losses.append(epoch_val_loss)
             self.val_step_losses = []
-            print(f'Epoch {self.current_epoch}{" device" + str(self.global_rank) if self.trainer.num_devices > 1 else ""}: val_loss={epoch_val_loss}')
+            print(f'Epoch {self.current_epoch+1}{" device" + str(self.global_rank) if self.trainer.num_devices > 1 else ""}: val_loss={epoch_val_loss}')
         # Calculate the metrics
         metrics = self._calc_epoch_metrics(self.val_batch_preds, self.val_batch_targets)
-        print(f'Epoch {self.current_epoch}{" device" + str(self.global_rank) if self.trainer.num_devices > 1 else ""}: ' + ' '.join([f'{k}={v}' for k, v in metrics.items()]))
+        print(f'Epoch {self.current_epoch+1}{" device" + str(self.global_rank) if self.trainer.num_devices > 1 else ""}: ' + ' '.join([f'{k}={v}' for k, v in metrics.items()]))
         self.val_metrics_all.append(metrics)
         # Initialize the lists for the next epoch
         self.val_batch_targets = []
@@ -332,7 +336,7 @@ class TorchVisionModule(pl.LightningModule, ABC):
         """Epoch end processes during the test (E.g., calculate the metrics)"""
         # Calculate the metrics
         metrics = self._calc_epoch_metrics(self.test_batch_preds, self.test_batch_targets)
-        print(f'Epoch {self.current_epoch} device{self.global_rank}: ' + ' '.join([f'{k}={v}' for k, v in metrics.items()]))
+        print(f'Epoch {self.current_epoch+1} device{self.global_rank}: ' + ' '.join([f'{k}={v}' for k, v in metrics.items()]))
         self.test_epoch_metrics.append(metrics)        
         # Initialize the lists for the next epoch
         self.test_batch_targets = []

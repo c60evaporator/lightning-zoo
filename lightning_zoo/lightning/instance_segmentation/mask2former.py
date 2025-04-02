@@ -13,6 +13,7 @@ class Mask2FormerModule(InstanceSegModule):
                  pretrained=True, tuned_layers=None,
                  opt_name='adamw', lr=2e-5, weight_decay=1e-4, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
                  lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
+                 save_first_prediction=True, num_saved_predictions=4,
                  semantic_metrics_score_threshold=0.2,
                  model_weight='facebook/mask2former-swin-small-coco-instance', no_object_weight=0.1, dice_weight=5.0, class_weight=2.0, mask_weight=5.0,
                  post_process_score_threshold=0.1):
@@ -21,6 +22,7 @@ class Mask2FormerModule(InstanceSegModule):
                          criterion, pretrained, tuned_layers,
                          opt_name, lr, weight_decay, momentum, rmsprop_alpha, eps, adam_betas,
                          lr_scheduler, lr_step_size, lr_steps, lr_gamma, lr_T_max, lr_patience,
+                         save_first_prediction, num_saved_predictions,
                          semantic_metrics_score_threshold)
         self.model_weight = model_weight
         self.model: Mask2FormerForUniversalSegmentation
@@ -42,9 +44,12 @@ class Mask2FormerModule(InstanceSegModule):
                 id2label = {0: 'background', **self.idx_to_class}
             else:
                 id2label = self.idx_to_class
+            label2id = {v: k for k, v in id2label.items()}
+            # Load the model
             model = Mask2FormerForUniversalSegmentation.from_pretrained(
                 self.model_weight,
                 id2label=id2label,
+                label2id=label2id,
                 ignore_mismatched_sizes=True,
                 no_object_weight=self.no_object_weight,
                 dice_weight=self.dice_weight,

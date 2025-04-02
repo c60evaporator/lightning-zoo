@@ -1,15 +1,12 @@
-import json
-import os
+from torch_extend.dataset import CocoInstanceSegmentation
 
-from torch_extend.dataset import CocoDetection
+from .base_instance import InstanceSegDataModule
 
-from .base_detection import DetectionDataModule
-
-class CocoDetectionDataModule(DetectionDataModule):
+class CocoInstanceSegDataModule(InstanceSegDataModule):
     def __init__(self, batch_size, num_workers, 
                  root, train_dir='train2017', val_dir='val2017',
                  train_annFile=None, val_annFile=None,
-                 dataset_name='COCODetection',
+                 dataset_name='COCOInstanceSegmentation',
                  train_transforms=None, train_transform=None, train_target_transform=None,
                  eval_transforms=None, eval_transform=None, eval_target_transform=None,
                  out_fmt='torchvision', processor=None):
@@ -33,7 +30,7 @@ class CocoDetectionDataModule(DetectionDataModule):
     ###### Dataset Methods ######
     def _get_datasets(self, ignore_transforms=False):
         """Dataset initialization"""
-        train_dataset = CocoDetection(
+        train_dataset = CocoInstanceSegmentation(
             f'{self.root}/{self.train_dir}',
             annFile=self.train_annFile,
             out_fmt=self.out_fmt,
@@ -42,7 +39,7 @@ class CocoDetectionDataModule(DetectionDataModule):
             target_transform=self._get_target_transform('train', ignore_transforms),
             processor=self.processor,
         )
-        val_dataset = CocoDetection(
+        val_dataset = CocoInstanceSegmentation(
             f'{self.root}/{self.val_dir}',
             annFile=self.val_annFile,
             out_fmt=self.out_fmt,
@@ -51,7 +48,7 @@ class CocoDetectionDataModule(DetectionDataModule):
             target_transform=self._get_target_transform('val', ignore_transforms),
             processor=self.processor,
         )
-        test_dataset = CocoDetection(
+        test_dataset = CocoInstanceSegmentation(
             f'{self.root}/{self.val_dir}',
             annFile=self.val_annFile,
             out_fmt=self.out_fmt,
@@ -65,43 +62,6 @@ class CocoDetectionDataModule(DetectionDataModule):
     ###### Validation Methods ######
     def _output_filtered_annotation(self, df_img_results, result_dir, image_set):
         print('Exporting the filtered annotaion file...')
-        del_img_ids = df_img_results[df_img_results['anomaly']]['image_id'].tolist()
-        if image_set=='train':
-            coco_dataset = self.train_dataset.coco.dataset
-        elif image_set == 'val':
-            coco_dataset = self.val_dataset.coco.dataset
-        else:
-            raise RuntimeError('The `image_set` argument should be "train" or "val"')
-        # Load the coco fields
-        coco_info = coco_dataset['info']
-        coco_licenses = coco_dataset['licenses']
-        coco_images = coco_dataset['images']
-        coco_annotations = coco_dataset['annotations']
-        coco_categories = coco_dataset['categories']
-        # Filter the images
-        filtered_images = [image for image in coco_images if image['id'] not in del_img_ids]
-        # Filter the annotations
-        filtered_annotations = [ann for ann in coco_annotations if ann['image_id'] not in del_img_ids]
-        # Output the filtered annotation JSON file
-        filtered_coco = {
-            'info': coco_info,
-            'licenses': coco_licenses,
-            'images': filtered_images,
-            'annotations': filtered_annotations,
-            'categories': coco_categories
-        }
-        os.makedirs(f'{result_dir}/filtered_ann', exist_ok=True)
-        with open(f'{result_dir}/filtered_ann/instances_{image_set}_filtered.json', 'w') as f:
-            json.dump(filtered_coco, f, indent=None)
+        # TODO: Implement this method
     
     ###### Other Methods ######
-    def _sample_dataset(self, dataset, image_ratio, labels):
-        """Sample the dataset"""
-        # TODO: Implement this method
-        # Sample the anntations
-
-        # Save the sampled images
-        pass
-
-    def sample_dataset(self, image_ratio, labels):
-        """Sample the dataset"""

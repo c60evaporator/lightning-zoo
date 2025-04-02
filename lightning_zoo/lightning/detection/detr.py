@@ -13,6 +13,7 @@ class DetrModule(DetectionModule):
                  pretrained=True, tuned_layers=None,
                  opt_name='adamw', lr=2e-5, weight_decay=1e-4, momentum=None, rmsprop_alpha=None, eps=None, adam_betas=None,
                  lr_scheduler=None, lr_step_size=None, lr_steps=None, lr_gamma=None, lr_T_max=None, lr_patience=None,
+                 save_first_prediction=True, num_saved_predictions=4,
                  first_epoch_lr_scheduled=False,
                  model_weight='facebook/detr-resnet-50', lr_backbone=5e-6):
         super().__init__(class_to_idx,
@@ -20,6 +21,7 @@ class DetrModule(DetectionModule):
                          criterion, pretrained, tuned_layers,
                          opt_name, lr, weight_decay, momentum, rmsprop_alpha, eps, adam_betas,
                          lr_scheduler, lr_step_size, lr_steps, lr_gamma, lr_T_max, lr_patience,
+                         save_first_prediction, num_saved_predictions,
                          first_epoch_lr_scheduled)
         self.model_weight = model_weight
         self.model: DetrForObjectDetection
